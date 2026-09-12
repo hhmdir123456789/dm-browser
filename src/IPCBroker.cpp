@@ -51,7 +51,6 @@ Result<bool> IPCBroker::startServerFor(Pid pid, const std::string& pipeName) {
     auto pipe = std::make_unique<dm::ipc::Pipe>();
     auto r = pipe->createServer(pipeName);
     if (!r.ok()) return r;
-
     std::lock_guard lock(mu_);
     servers_[pid] = std::move(pipe);
     return Result<bool>::ok(true);
@@ -83,16 +82,13 @@ Result<bool> IPCBroker::waitForPlugin(Pid pid, int /*timeoutMs*/) {
                 std::cerr << "[IPC] 收到 Hello, plugin="
                           << hello.value().pluginId << "\n";
             }
-        } else {
-            std::cerr << "[IPC] 首帧不是 Hello, kind="
-                      << static_cast<int>(kind) << "\n";
         }
     }
     return Result<bool>::ok(true);
 }
 
 // ============================================================
-// 向插件发 Invoke
+// 主进程 → 插件进程：走授权校验的 Invoke
 // ============================================================
 InvokeResult IPCBroker::sendInvokeToPlugin(
     const PluginId& pid, Pid targetPid, const InvokeEnvelope& env) {
@@ -185,6 +181,61 @@ InvokeResult IPCBroker::sendInvokeToPlugin(
     out.ok = resultMsg.ok;
     out.value = resultMsg.value;
     if (!out.ok) out.error = Error::internal(resultMsg.errorMsg);
+    return out;
+}
+
+// ============================================================
+// 主进程 → 插件进程：控制通道，不走授权校验
+// ============================================================
+InvokeResult IPCBroker::sendControlToPlugin(
+    const PluginId& pid, Pid targetPid,
+    const std::string& method, const std::string& args) {
+    (void)pid;
+
+    dm::ipc::Pipe* pipe = nullptr;
+    {
+        std::lock_guard lock(mu_);
+        auto it = servers_.find(targetPid);
+        if (it == servers_.end()) {
+            InvokeResult out;
+            out.ok = false;
+            out.error = Error::internal("no server pipe for pid");
+            return out;
+        }
+        pipe = it->second.get();
+    }
+
+    // 编码时用空 grantId，插件侧不校验（控制通道）
+    auto payload = dm::ipc::Framing::encodeInvoke(
+        "", "control", method, args, "t-ctrl", "");
+    auto w = dm::ipc::Framing::writeFrame(*pipe, payload);
+    if (!w.ok()) {
+        InvokeResult out;
+        out.ok = false;
+        out.error = Error::internal("write failed: " + w.error().msg);
+        return out;
+    }
+
+    auto response = dm::ipc::Framing::readFrame(*pipe);
+    if (!response.ok()) {
+        InvokeResult out;
+        out.ok = false;
+        out.error = Error::internal("read failed: " + response.error().msg);
+        return out;
+    }
+
+    auto result = dm::ipc::Framing::decodeResult(response.value());
+    if (!result.ok()) {
+        InvokeResult out;
+        out.ok = false;
+        out.error = Error::internal("decode failed: " + result.error().msg);
+        return out;
+    }
+
+    InvokeResult out;
+    out.ok = result.value().ok;
+    out.value = result.value().value;
+    if (!out.ok) out.error = Error::internal(result.value().errorMsg);
     return out;
 }
 

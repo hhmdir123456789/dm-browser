@@ -53,12 +53,19 @@ public:
     // 为指定插件进程创建命名管道服务端
     Result<bool> startServerFor(Pid pid, const std::string& pipeName);
 
-    // 等待插件进程连接到管道
+    // 等待插件进程连接到管道，并消费 Hello 帧
     Result<bool> waitForPlugin(Pid pid, int timeoutMs = 5000);
 
-    // 向插件进程发送 Invoke 并读回结果
+    // 主进程 → 插件进程：走授权校验的 Invoke
+    // 用于插件能力调用（如触发插件内部逻辑）
     InvokeResult sendInvokeToPlugin(const PluginId& pid, Pid targetPid,
                                     const InvokeEnvelope& env);
+
+    // 主进程 → 插件进程：控制通道，不走授权校验
+    // 用于 reload、status 等管理命令
+    InvokeResult sendControlToPlugin(const PluginId& pid, Pid targetPid,
+                                     const std::string& method,
+                                     const std::string& args);
 
     // 关闭指定插件进程的管道
     void closeServerFor(Pid pid);

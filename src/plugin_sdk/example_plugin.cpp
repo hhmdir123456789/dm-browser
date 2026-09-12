@@ -17,6 +17,10 @@ __declspec(dllexport) const char* dm_plugin_handle(
     std::string result;
     if (std::strcmp(method, "greet") == 0) {
         result = "hello from example plugin, args=" + std::string(args);
+    } else if (std::strcmp(method, "version") == 0) {
+        result = "example plugin v1.0.0";
+    } else if (std::strcmp(method, "echo") == 0) {
+        result = std::string(args);
     } else {
         result = "unknown method: " + std::string(method);
     }

@@ -470,7 +470,8 @@ int main() {
             InvokeEnvelope env;
             env.grantId = browser.grants().grant("dm.test.plugin", "Ping");
             env.endpoint = "Ping";
-            env.method = "hello";
+            env.method = "greet";
+            env.args = "ipc-test";
             env.traceId = "t-ipc-1";
             auto resp = browser.broker().sendInvokeToPlugin(
                 "dm.test.plugin", info.pid, env);
@@ -478,11 +479,69 @@ int main() {
                 std::cout << "  [诊断] " << resp.error.msg << "\n";
             }
             check(resp.ok, "跨进程 Invoke 成功");
-            check(resp.value.find("handled") != std::string::npos,
+            check(resp.value.find("hello from example plugin") != std::string::npos,
                   "插件返回内容正确");
+            check(resp.value.find("ipc-test") != std::string::npos,
+                  "插件收到 args 正确");
 
             browser.processManager().terminate(info.pid);
             check(!browser.processManager().isAlive(info.pid), "进程已终止");
+        }
+
+        // ============================================================
+        // 插件热加载
+        // ============================================================
+        std::cout << "\n--- 插件热加载 ---\n";
+        auto spawnHL = browser.spawnPluginHost("dm.hotload.test", false);
+        check(spawnHL.ok(), "启动热加载测试进程");
+        if (spawnHL.ok()) {
+            auto hlInfo = spawnHL.value();
+
+            auto srvHL = browser.broker().startServerFor(hlInfo.pid, hlInfo.pipeName);
+            check(srvHL.ok(), "创建热加载管道");
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
+
+            auto waitHL = browser.broker().waitForPlugin(hlInfo.pid);
+            check(waitHL.ok(), "热加载插件已连接");
+
+            // 1. 调用 greet
+            InvokeEnvelope env1;
+            env1.grantId = browser.grants().grant("dm.hotload.test", "Ping");
+            env1.endpoint = "Ping";
+            env1.method = "greet";
+            env1.args = "world";
+            env1.traceId = "t-hl-1";
+            auto r1 = browser.broker().sendInvokeToPlugin(
+                "dm.hotload.test", hlInfo.pid, env1);
+            check(r1.ok, "调用 greet 成功");
+            check(r1.value.find("hello from example plugin") != std::string::npos,
+                  "greet 返回正确");
+
+            // 2. 发 reload
+            auto r2 = browser.broker().sendControlToPlugin(
+                "dm.hotload.test", hlInfo.pid, "reload", "");
+            check(r2.ok, "reload 命令成功");
+            check(r2.value.find("reloaded") != std::string::npos,
+                  "reload 返回 reloaded");
+            check(r2.value.find("load #2") != std::string::npos,
+                  "reload 后 loadCount=2");
+
+            // 3. 重载后再调 greet
+            InvokeEnvelope env3;
+            env3.grantId = browser.grants().grant("dm.hotload.test", "Ping");
+            env3.endpoint = "Ping";
+            env3.method = "greet";
+            env3.args = "after-reload";
+            env3.traceId = "t-hl-3";
+            auto r3 = browser.broker().sendInvokeToPlugin(
+                "dm.hotload.test", hlInfo.pid, env3);
+            check(r3.ok, "重载后 greet 成功");
+            check(r3.value.find("after-reload") != std::string::npos,
+                  "重载后 greet 返回正确");
+
+            browser.processManager().terminate(hlInfo.pid);
+            check(!browser.processManager().isAlive(hlInfo.pid), "热加载进程已终止");
         }
 
         std::cout << "\n--- A+B: 站点隔离 ---\n";
