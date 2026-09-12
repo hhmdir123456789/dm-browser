@@ -1,0 +1,92 @@
+name: DM Browser CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test-windows:
+    name: Windows Build & Test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Verify third_party/sqlite3 exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "third_party/sqlite3/sqlite3.c")) {
+            Write-Error "缺少 third_party/sqlite3/sqlite3.c"
+            exit 1
+          }
+          if (-not (Test-Path "third_party/sqlite3/sqlite3.h")) {
+            Write-Error "缺少 third_party/sqlite3/sqlite3.h"
+            exit 1
+          }
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run main tests (67 条)
+        shell: pwsh
+        run: |
+          & "build\Release\dm_browser.exe"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "dm_browser.exe 返回 $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      - name: Run unit tests (15 条)
+        shell: pwsh
+        run: |
+          & "build\Release\dm_tests.exe"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "dm_tests.exe 返回 $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      - name: Verify cross-process IPC artifacts
+        shell: pwsh
+        run: |
+          $required = @(
+            "build\Release\dm_browser.exe",
+            "build\Release\dm_plugin_host.exe",
+            "build\Release\dm_tests.exe",
+            "build\Release\dm_ui.exe",
+            "build\Release\example_plugin.dll"
+          )
+          foreach ($f in $required) {
+            if (-not (Test-Path $f)) {
+              Write-Error "缺少产物: $f"
+              exit 1
+            }
+            Write-Host "OK: $f"
+          }
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm-browser-windows
+          path: |
+            build/Release/dm_browser.exe
+            build/Release/dm_plugin_host.exe
+            build/Release/dm_tests.exe
+            build/Release/dm_ui.exe
+            build/Release/example_plugin.dll
+          if-no-files-found: warn
+          retention-days: 7
