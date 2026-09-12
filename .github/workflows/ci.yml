@@ -30,10 +30,6 @@ jobs:
             Write-Error "缺少 third_party/sqlite3/sqlite3.c"
             exit 1
           }
-          if (-not (Test-Path "third_party/sqlite3/sqlite3.h")) {
-            Write-Error "缺少 third_party/sqlite3/sqlite3.h"
-            exit 1
-          }
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -41,7 +37,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Run main tests (67 条)
+      - name: Run main tests (79 条)
         shell: pwsh
         run: |
           & "build\Release\dm_browser.exe"
@@ -59,7 +55,7 @@ jobs:
             exit $LASTEXITCODE
           }
 
-      - name: Verify cross-process IPC artifacts
+      - name: Verify artifacts
         shell: pwsh
         run: |
           $required = @(

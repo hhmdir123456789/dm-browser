@@ -9,6 +9,37 @@ if(WIN32)
 endif()
 
 # ============================================================
+# WebView2 SDK（仅 Windows）
+# 参考 FreeRDP / wxWidgets 的做法：CMake 直连 NuGet
+# ============================================================
+if(WIN32)
+    set(WEBVIEW2_VERSION "1.0.2903.40")
+    set(WEBVIEW2_URL "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/${WEBVIEW2_VERSION}")
+    set(WEBVIEW2_DIR "${CMAKE_BINARY_DIR}/webview2")
+    set(WEBVIEW2_HEADER "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
+
+    if(NOT EXISTS "${WEBVIEW2_HEADER}")
+        message(STATUS "Downloading WebView2 SDK ${WEBVIEW2_VERSION} ...")
+        set(WEBVIEW2_NUPKG "${CMAKE_BINARY_DIR}/webview2.nupkg")
+        file(DOWNLOAD "${WEBVIEW2_URL}" "${WEBVIEW2_NUPKG}"
+             STATUS wv2_status
+             SHOW_PROGRESS)
+        list(GET wv2_status 0 wv2_code)
+        if(NOT wv2_code EQUAL 0)
+            message(FATAL_ERROR "WebView2 SDK 下载失败: ${wv2_status}")
+        endif()
+        file(MAKE_DIRECTORY "${WEBVIEW2_DIR}")
+        file(ARCHIVE_EXTRACT INPUT "${WEBVIEW2_NUPKG}" DESTINATION "${WEBVIEW2_DIR}")
+        if(NOT EXISTS "${WEBVIEW2_HEADER}")
+            message(FATAL_ERROR "WebView2 SDK 解压后找不到头文件: ${WEBVIEW2_HEADER}")
+        endif()
+    endif()
+
+    set(WEBVIEW2_INCLUDE "${WEBVIEW2_DIR}/build/native/include")
+    set(WEBVIEW2_LIB "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
+endif()
+
+# ============================================================
 # sqlite3 amalgamation
 # ============================================================
 add_library(sqlite3 STATIC
@@ -51,14 +82,19 @@ target_compile_options(dm_browser PRIVATE /W3 /utf-8)
 if(WIN32)
     target_link_libraries(dm_browser PRIVATE userenv)
 
+    # --- UI：WebView2 真实渲染 ---
     add_executable(dm_ui
-        src/ui/Window.cpp
+        src/ui/RenderWindow.cpp
         src/ui/ui_main.cpp
     )
-    target_include_directories(dm_ui PRIVATE src)
+    target_include_directories(dm_ui PRIVATE src "${WEBVIEW2_INCLUDE}")
+    target_link_libraries(dm_ui PRIVATE
+        "${WEBVIEW2_LIB}"
+        shlwapi ole32 oleaut32
+    )
     target_compile_options(dm_ui PRIVATE /W3 /utf-8)
-    target_link_libraries(dm_ui PRIVATE comctl32 user32 gdi32)
 
+    # --- 示例插件 DLL ---
     add_library(example_plugin SHARED
         src/plugin_sdk/example_plugin.cpp
     )
