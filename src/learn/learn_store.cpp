@@ -39,8 +39,6 @@ bool LearnStore::init() {
         auto r = db_.exec(s);
         if (!r.isOk()) return false;
     }
-    // 兼容旧库：如果 site_sample 没有 snapshot_json 列，补一个
-    // （列已存在时会返回错误，忽略即可）
     db_.exec("ALTER TABLE site_sample ADD COLUMN snapshot_json TEXT");
     return true;
 }
@@ -103,9 +101,7 @@ SiteSample LearnStore::getSampleByUrl(const std::string& url) {
     std::lock_guard<std::mutex> lock(mu_);
     auto rows = db_.query("SELECT id FROM site_sample WHERE url=?", {url});
     if (rows.empty()) return {};
-    // 释放锁后再调 getSample（避免死锁）
     int64_t id = std::stoll(rows[0][0]);
-    // 不能直接调 getSample（会再锁一次），直接内联查询
     auto full = db_.query(
         "SELECT id,url,title,html,css,html_size,captured_at,"
         "ref_screenshot,dm_screenshot,diff_score,status "
@@ -303,6 +299,49 @@ std::string LearnStore::loadSnapshot(const std::string& url) {
         "SELECT snapshot_json FROM site_sample WHERE url = ?", {url});
     if (rows.empty() || rows[0].empty()) return "";
     return rows[0][0];
+}
+
+// ============================================================
+// 参考快照查询（批 C）
+// ============================================================
+
+std::vector<RefInfo> LearnStore::listRefs(int limit) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto rows = db_.query(
+        "SELECT id, url, title, captured_at, snapshot_json "
+        "FROM site_sample "
+        "WHERE snapshot_json IS NOT NULL AND snapshot_json != '' "
+        "ORDER BY captured_at DESC LIMIT ?",
+        {std::to_string(limit)});
+    std::vector<RefInfo> out;
+    for (auto& r : rows) {
+        RefInfo info;
+        info.id = std::stoll(r[0]);
+        info.url = r[1];
+        info.title = r[2];
+        try { info.capturedAt = std::stoll(r[3]); } catch (...) {}
+        info.snapshotJson = r[4];
+        out.push_back(info);
+    }
+    return out;
+}
+
+RefInfo LearnStore::getRef(const std::string& url) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto rows = db_.query(
+        "SELECT id, url, title, captured_at, snapshot_json "
+        "FROM site_sample "
+        "WHERE url = ? AND snapshot_json IS NOT NULL AND snapshot_json != ''",
+        {url});
+    RefInfo info;
+    if (rows.empty()) return info;
+    auto& r = rows[0];
+    info.id = std::stoll(r[0]);
+    info.url = r[1];
+    info.title = r[2];
+    try { info.capturedAt = std::stoll(r[3]); } catch (...) {}
+    info.snapshotJson = r[4];
+    return info;
 }
 
 // ============================================================

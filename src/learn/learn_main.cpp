@@ -9,6 +9,7 @@
 #include <string>
 #include <set>
 #include <algorithm>
+#include <ctime>
 
 using namespace dm::learn;
 
@@ -34,6 +35,8 @@ static void printUsage() {
     std::cout << "  dm_learn dump                            生成示例快照\n";
     std::cout << "  dm_learn compare <ref.json> <dm.json>    多维对比\n";
     std::cout << "  dm_learn infer <ref.json> <dm.json>      推断缺失特性\n";
+    std::cout << "  dm_learn refs                            列出参考快照\n";
+    std::cout << "  dm_learn inspect <url>                   查看 URL 的参考详情\n";
     std::cout << "\n状态值: pending / analyzed / fixed / ignored\n";
 }
 
@@ -147,6 +150,83 @@ static void dumpDemoSnapshot() {
     out << serializeSnapshot(s);
     std::cout << "已生成 snapshot_ref.json ("
               << s.nodes.size() << " 个节点)\n";
+}
+
+// ============================================================
+// 批 C：refs / inspect
+// ============================================================
+// nowMs() 返回的是系统启动以来的毫秒数（GetTickCount64），
+// 不是 Unix 时间戳。这里按「距今多久」显示，避免 1970-01-01 的假日期。
+static std::string formatTime(int64_t ms) {
+    if (ms == 0) return "(未知)";
+    ULONGLONG now = GetTickCount64();
+    if (now < (ULONGLONG)ms) return "(刚刚)";
+    ULONGLONG diffSec = (now - (ULONGLONG)ms) / 1000;
+    if (diffSec < 60) return "刚刚";
+    if (diffSec < 3600)
+        return std::to_string(diffSec / 60) + " 分钟前";
+    if (diffSec < 86400)
+        return std::to_string(diffSec / 3600) + " 小时前";
+    return std::to_string(diffSec / 86400) + " 天前";
+}
+
+static void cmdRefs(LearnStore& store) {
+    auto refs = store.listRefs(100);
+    if (refs.empty()) {
+        std::cout << "（无参考快照）\n";
+        std::cout << "先在 dm_ui.exe 打开一个网页，侧边栏「分析」点「分析本页」\n";
+        return;
+    }
+    std::cout << "参考快照列表（共 " << refs.size() << " 条）：\n\n";
+    for (auto& r : refs) {
+        auto snap = parseSnapshotJson(r.snapshotJson);
+        std::cout << "  #" << r.id << "  " << r.url << "\n";
+        std::cout << "        " << snap.nodes.size() << " 节点"
+                  << "  · 深度 " << snap.maxDepth
+                  << "  · 保存于 " << formatTime(r.capturedAt) << "\n";
+    }
+}
+
+static void cmdInspect(LearnStore& store, const std::string& url) {
+    auto ref = store.getRef(url);
+    if (ref.id == 0) {
+        std::cout << "URL 无参考快照: " << url << "\n";
+        std::cout << "提示：在 dm_ui.exe 打开该页面，点侧边栏「分析本页」\n";
+        return;
+    }
+
+    auto snap = parseSnapshotJson(ref.snapshotJson);
+    std::cout << "URL:      " << ref.url << "\n";
+    std::cout << "标题:     " << ref.title << "\n";
+    std::cout << "保存于:   " << formatTime(ref.capturedAt) << "\n";
+    std::cout << "节点数:   " << snap.nodes.size() << "\n";
+    std::cout << "最大深度: " << snap.maxDepth << "\n";
+    std::cout << "视口:     " << snap.viewportWidth
+              << " x " << snap.viewportHeight << "\n";
+    std::cout << "图片:     " << snap.imageCount << "\n";
+    std::cout << "脚本:     " << snap.scriptCount << "\n";
+    std::cout << "样式表:   " << snap.styleSheetCount << "\n\n";
+
+    if (snap.nodes.empty()) {
+        std::cout << "（快照无节点）\n";
+        return;
+    }
+
+    std::cout << "前 10 个节点：\n";
+    int n = 0;
+    for (auto& node : snap.nodes) {
+        if (n++ >= 10) break;
+        std::cout << "  " << node.path << "  <" << node.tag << ">";
+        if (!node.className.empty()) std::cout << " ." << node.className;
+        std::cout << "  (" << (int)node.layout.w << "x"
+                  << (int)node.layout.h << ")";
+        if (node.style.display != "block" && !node.style.display.empty())
+            std::cout << "  display:" << node.style.display;
+        std::cout << "\n";
+    }
+    if (snap.nodes.size() > 10) {
+        std::cout << "  ... 还有 " << (snap.nodes.size() - 10) << " 个\n";
+    }
 }
 
 int main(int argc, char** argv) {
@@ -342,6 +422,12 @@ int main(int argc, char** argv) {
             }
             store.recalcPriorities();
         }
+    }
+    else if (cmd == "refs") {
+        cmdRefs(store);
+    }
+    else if (cmd == "inspect" && argc > 2) {
+        cmdInspect(store, argv[2]);
     }
     else {
         printUsage();
