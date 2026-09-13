@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include <WebView2EnvironmentOptions.h>
 
 namespace dm::ui {
 
@@ -17,6 +18,9 @@ public:
 
     // 导航到指定 URL
     void navigate(const std::wstring& url);
+
+    // 把 HTML 字符串作为页面内容加载
+    void navigateToString(const std::wstring& html);
 
     // 消息循环
     int run();

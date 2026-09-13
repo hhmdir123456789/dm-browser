@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 13px;
+    user-select: none;
+    background: #dce1e6;
+  }
+
+  /* ========== 标签栏 ========== */
+  .tabbar {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding: 0 8px;
+    background: #dce1e6;
+    gap: 4px;
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    height: 32px;
+    border-radius: 8px 8px 0 0;
+    background: transparent;
+    color: #333;
+    cursor: pointer;
+    transition: background 0.15s;
+    max-width: 220px;
+    min-width: 120px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .tab:hover { background: rgba(255,255,255,0.5); }
+  .tab.active {
+    background: #f5f7fa;
+    color: #000;
+    box-shadow: 0 -1px 2px rgba(0,0,0,0.05);
+  }
+  .tab .favicon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    background: #888;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #fff;
+  }
+  .tab .title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab .close {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    color: #666;
+    flex-shrink: 0;
+  }
+  .tab:hover .close,
+  .tab.active .close { display: flex; }
+  .tab .close:hover { background: rgba(0,0,0,0.1); color: #000; }
+
+  .new-tab {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #555;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .new-tab:hover { background: rgba(255,255,255,0.5); }
+
+  /* ========== 工具栏 ========== */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    height: 48px;
+    padding: 0 12px;
+    background: #f5f7fa;
+    gap: 8px;
+  }
+  .btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #444;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+  .btn:hover { background: rgba(0,0,0,0.06); }
+  .btn:disabled { color: #bbb; cursor: default; }
+  .btn:disabled:hover { background: transparent; }
+
+  /* ========== 地址栏 ========== */
+  .addr-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 10px;
+    background: #fff;
+    border-radius: 17px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    gap: 6px;
+  }
+  .addr-wrap:focus-within {
+    box-shadow: 0 0 0 2px rgba(0,120,212,0.3), 0 1px 2px rgba(0,0,0,0.08);
+  }
+  .addr-wrap .lock {
+    font-size: 13px;
+    color: #666;
+    flex-shrink: 0;
+  }
+  .addr-wrap input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    color: #222;
+    background: transparent;
+    font-family: inherit;
+  }
+  .addr-wrap .icon-right {
+    font-size: 14px;
+    color: #666;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+  }
+  .addr-wrap .icon-right:hover { background: rgba(0,0,0,0.06); }
+</style>
+</head>
+<body>
+  <!-- 标签栏 -->
+  <div class="tabbar" id="tabbar"></div>
+
+  <!-- 工具栏 -->
+  <div class="toolbar">
+    <div class="btn" id="btnBack" title="后退">←</div>
+    <div class="btn" id="btnForward" title="前进">→</div>
+    <div class="btn" id="btnReload" title="刷新">↻</div>
+    <div class="btn" id="btnHome" title="主页">⌂</div>
+
+    <div class="addr-wrap">
+      <span class="lock" id="lockIcon">🔒</span>
+      <input id="addrInput" type="text" placeholder="搜索或输入网址" />
+      <span class="icon-right" id="btnStar" title="收藏">☆</span>
+      <span class="icon-right" title="更多">⋯</span>
+    </div>
+
+    <div class="btn" title="设置">⚙</div>
+  </div>
+
+  <script>
+    // ========== 与 C++ 通信 ==========
+    function send(msg) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(msg);
+      }
+    }
+
+    // ========== 标签渲染 ==========
+    let tabs = [];
+    let activeId = 0;
+
+    function renderTabs() {
+      const bar = document.getElementById('tabbar');
+      bar.innerHTML = '';
+
+      for (const t of tabs) {
+        const el = document.createElement('div');
+        el.className = 'tab' + (t.id === activeId ? ' active' : '');
+        el.innerHTML = `
+          <div class="favicon">${(t.title || '?')[0]}</div>
+          <div class="title">${t.title || '新标签页'}</div>
+          <div class="close">×</div>
+        `;
+        el.addEventListener('click', (e) => {
+          if (e.target.classList.contains('close')) {
+            send({ type: 'closeTab', id: t.id });
+          } else {
+            send({ type: 'activateTab', id: t.id });
+          }
+        });
+        bar.appendChild(el);
+      }
+
+      // 新建标签按钮
+      const nt = document.createElement('div');
+      nt.className = 'new-tab';
+      nt.textContent = '+';
+      nt.title = '新建标签页';
+      nt.addEventListener('click', () => send({ type: 'newTab' }));
+      bar.appendChild(nt);
+    }
+
+    // ========== 地址栏 ==========
+    const addrInput = document.getElementById('addrInput');
+
+    addrInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        send({ type: 'navigate', url: addrInput.value.trim() });
+        addrInput.blur();
+      }
+      if (e.key === 'Escape') {
+        addrInput.blur();
+      }
+    });
+
+    addrInput.addEventListener('focus', () => {
+      addrInput.select();
+    });
+
+    // ========== 工具栏按钮 ==========
+    document.getElementById('btnBack').onclick = () => send({ type: 'back' });
+    document.getElementById('btnForward').onclick = () => send({ type: 'forward' });
+    document.getElementById('btnReload').onclick = () => send({ type: 'reload' });
+    document.getElementById('btnHome').onclick = () => send({ type: 'home' });
+    document.getElementById('btnStar').onclick = () => send({ type: 'star' });
+
+    // ========== 接收 C++ 消息 ==========
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.addEventListener('message', (e) => {
+        const msg = e.data;
+        if (msg.type === 'updateTabs') {
+          tabs = msg.tabs;
+          activeId = msg.activeId;
+          renderTabs();
+        }
+        if (msg.type === 'updateAddress') {
+          if (document.activeElement !== addrInput) {
+            addrInput.value = msg.url || '';
+          }
+        }
+        if (msg.type === 'updateNavState') {
+          document.getElementById('btnBack').style.opacity = msg.canBack ? 1 : 0.3;
+          document.getElementById('btnForward').style.opacity = msg.canForward ? 1 : 0.3;
+        }
+      });
+    }
+
+    // 初始化
+    renderTabs();
+  </script>
+</body>
+</html>

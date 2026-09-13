@@ -49,8 +49,7 @@ bool RenderWindow::create(const std::wstring& title, int w, int h) {
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result) || !env) {
-                    std::cerr << "[UI] WebView2 环境创建失败: "
-                              << std::hex << result << "\n";
+                    std::cerr << "[UI] WebView2 环境创建失败\n";
                     return S_OK;
                 }
                 env->CreateCoreWebView2Controller(hwnd_,
@@ -99,6 +98,10 @@ bool RenderWindow::create(const std::wstring& title, int w, int h) {
 
 void RenderWindow::navigate(const std::wstring& url) {
     if (webview_) webview_->Navigate(url.c_str());
+}
+
+void RenderWindow::navigateToString(const std::wstring& html) {
+    if (webview_) webview_->NavigateToString(html.c_str());
 }
 
 void RenderWindow::onWebViewReady() {

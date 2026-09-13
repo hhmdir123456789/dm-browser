@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>大明DM浏览器</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #0f0f1a;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    --accent1: rgba(0,212,255,0.15);
+    --accent2: rgba(123,47,247,0.15);
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle at 30% 30%, var(--accent1), transparent 50%),
+                radial-gradient(circle at 70% 70%, var(--accent2), transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(26,26,46,1), rgba(15,15,26,1));
+    animation: bgPulse 12s ease-in-out infinite alternate;
+    z-index: -1;
+  }
+  @keyframes bgPulse {
+    0% { transform: scale(1) rotate(0deg); }
+    100% { transform: scale(1.1) rotate(5deg); }
+  }
+  .greeting {
+    font-size: 18px;
+    color: #666;
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+  }
+  .clock {
+    font-size: 52px;
+    font-weight: 200;
+    color: #888;
+    letter-spacing: 4px;
+    margin-bottom: 32px;
+    font-variant-numeric: tabular-nums;
+  }
+  .logo {
+    font-size: 68px;
+    font-weight: bold;
+    letter-spacing: 10px;
+    background: linear-gradient(90deg, #00d4ff, #7b2ff7, #00d4ff);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+    animation: logoShine 4s linear infinite;
+  }
+  @keyframes logoShine {
+    to { background-position: 200% center; }
+  }
+  .subtitle {
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 48px;
+    letter-spacing: 6px;
+  }
+  .search-box {
+    width: 640px;
+    display: flex;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 32px;
+    padding: 4px;
+    transition: all 0.3s;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .search-box:focus-within {
+    border-color: rgba(0,212,255,0.6);
+    box-shadow: 0 0 40px rgba(0,212,255,0.25), 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .search-box input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-size: 16px;
+    padding: 18px 28px;
+  }
+  .search-box input::placeholder { color: #555; }
+  .search-box button {
+    background: linear-gradient(135deg, #00d4ff, #7b2ff7);
+    border: none;
+    color: #fff;
+    font-size: 15px;
+    padding: 0 36px;
+    border-radius: 28px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: opacity 0.2s;
+  }
+  .search-box button:hover { opacity: 0.9; }
+  .hint {
+    margin-top: 24px;
+    font-size: 12px;
+    color: #444;
+    letter-spacing: 1px;
+  }
+  .hint kbd {
+    display: inline-block;
+    padding: 2px 8px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #888;
+    margin: 0 2px;
+  }
+  .shortcuts {
+    display: flex;
+    gap: 20px;
+    margin-top: 56px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 760px;
+  }
+  .shortcut {
+    width: 100px;
+    height: 100px;
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    color: #999;
+    position: relative;
+    overflow: hidden;
+  }
+  .shortcut::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(123,47,247,0.15));
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .shortcut:hover {
+    border-color: rgba(0,212,255,0.5);
+    color: #fff;
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 12px 32px rgba(0,212,255,0.2);
+  }
+  .shortcut:hover::before { opacity: 1; }
+  .shortcut .icon { font-size: 34px; margin-bottom: 8px; position: relative; z-index: 1; }
+  .shortcut .name { font-size: 12px; position: relative; z-index: 1; letter-spacing: 1px; }
+  .shortcut.primary {
+    border-color: rgba(0,212,255,0.4);
+    color: #fff;
+    box-shadow: 0 0 24px rgba(0,212,255,0.15);
+  }
+  .shortcut.primary::before { opacity: 0.5; }
+  .shortcut.primary:hover {
+    box-shadow: 0 12px 40px rgba(0,212,255,0.35);
+  }
+  .footer {
+    position: fixed;
+    bottom: 24px;
+    font-size: 12px;
+    color: #333;
+    letter-spacing: 2px;
+  }
+</style>
+</head>
+<body>
+  <div class="greeting" id="greeting">你好</div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="logo">大明DM</div>
+  <div class="subtitle">新一代浏览器</div>
+
+  <form class="search-box" onsubmit="doSearch(event)">
+    <input id="q" type="text" placeholder="输入网址或搜索内容..." autofocus>
+    <button type="submit">搜索</button>
+  </form>
+
+  <div class="hint">
+    按 <kbd>/</kbd> 聚焦 · <kbd>Esc</kbd> 清空 ·
+    前缀 <kbd>gh</kbd> GitHub · <kbd>so</kbd> StackOverflow · <kbd>m</kbd> MDN
+  </div>
+
+  <div class="shortcuts">
+    <a class="shortcut primary" href="https://chat.deepseek.com/">
+      <div class="icon">🐋</div>
+      <div class="name">DeepSeek</div>
+    </a>
+    <a class="shortcut" href="https://www.deepseek.com/">
+      <div class="icon">🏠</div>
+      <div class="name">官网</div>
+    </a>
+    <a class="shortcut" href="https://github.com">
+      <div class="icon">🐙</div>
+      <div class="name">GitHub</div>
+    </a>
+    <a class="shortcut" href="https://www.bing.com">
+      <div class="icon">🔍</div>
+      <div class="name">Bing</div>
+    </a>
+    <a class="shortcut" href="https://stackoverflow.com">
+      <div class="icon">📚</div>
+      <div class="name">StackOverflow</div>
+    </a>
+    <a class="shortcut" href="https://developer.mozilla.org">
+      <div class="icon">📖</div>
+      <div class="name">MDN</div>
+    </a>
+  </div>
+
+  <div class="footer">大明DM浏览器 · v0.1.0</div>
+
+  <script>
+    // 随机主题色
+    const themes = [
+      ['rgba(0,212,255,0.15)', 'rgba(123,47,247,0.15)'],
+      ['rgba(255,107,107,0.15)', 'rgba(255,209,102,0.15)'],
+      ['rgba(106,255,154,0.15)', 'rgba(0,212,255,0.15)'],
+      ['rgba(255,107,214,0.15)', 'rgba(123,47,247,0.15)'],
+      ['rgba(255,159,67,0.15)', 'rgba(255,107,107,0.15)'],
+    ];
+    const [c1, c2] = themes[Math.floor(Math.random() * themes.length)];
+    document.body.style.setProperty('--accent1', c1);
+    document.body.style.setProperty('--accent2', c2);
+
+    // 问候语 + 时钟
+    function updateGreeting() {
+      const h = new Date().getHours();
+      let g = '你好';
+      if (h < 6) g = '夜深了';
+      else if (h < 12) g = '早上好';
+      else if (h < 14) g = '中午好';
+      else if (h < 18) g = '下午好';
+      else g = '晚上好';
+      document.getElementById('greeting').textContent = g;
+    }
+    function updateClock() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clock').textContent = h + ':' + m;
+    }
+    updateGreeting();
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // 搜索路由
+    function doSearch(e) {
+      e.preventDefault();
+      const q = document.getElementById('q').value.trim();
+      if (!q) return;
+
+      if (/^https?:\/\//.test(q)) { window.location.href = q; return; }
+      if (/^[\w-]+(\.[\w-]+)+(\/.*)?$/.test(q)) {
+        window.location.href = 'https://' + q; return;
+      }
+      if (q.startsWith('gh ')) {
+        window.location.href = 'https://github.com/search?q=' + encodeURIComponent(q.slice(3)); return;
+      }
+      if (q.startsWith('so ')) {
+        window.location.href = 'https://stackoverflow.com/search?q=' + encodeURIComponent(q.slice(3)); return;
+      }
+      if (q.startsWith('m ')) {
+        window.location.href = 'https://developer.mozilla.org/zh-CN/search?q=' + encodeURIComponent(q.slice(2)); return;
+      }
+      window.location.href = 'https://chat.deepseek.com/';
+    }
+
+    // 键盘快捷键
+    document.addEventListener('keydown', (e) => {
+      const input = document.getElementById('q');
+      if (e.key === '/' && document.activeElement !== input) {
+        e.preventDefault();
+        input.focus();
+        input.select();
+      }
+      if (e.key === 'Escape' && document.activeElement === input) {
+        input.value = '';
+        input.blur();
+      }
+    });
+  </script>
+</body>
+</html>

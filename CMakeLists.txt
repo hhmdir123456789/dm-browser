@@ -8,10 +8,6 @@ if(WIN32)
     add_compile_definitions(DM_PLATFORM_WINDOWS)
 endif()
 
-# ============================================================
-# WebView2 SDK（仅 Windows）
-# 参考 FreeRDP / wxWidgets 的做法：CMake 直连 NuGet
-# ============================================================
 if(WIN32)
     set(WEBVIEW2_VERSION "1.0.2903.40")
     set(WEBVIEW2_URL "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/${WEBVIEW2_VERSION}")
@@ -22,16 +18,15 @@ if(WIN32)
         message(STATUS "Downloading WebView2 SDK ${WEBVIEW2_VERSION} ...")
         set(WEBVIEW2_NUPKG "${CMAKE_BINARY_DIR}/webview2.nupkg")
         file(DOWNLOAD "${WEBVIEW2_URL}" "${WEBVIEW2_NUPKG}"
-             STATUS wv2_status
-             SHOW_PROGRESS)
+             STATUS wv2_status SHOW_PROGRESS)
         list(GET wv2_status 0 wv2_code)
         if(NOT wv2_code EQUAL 0)
-            message(FATAL_ERROR "WebView2 SDK 下载失败: ${wv2_status}")
+            message(FATAL_ERROR "WebView2 SDK download failed")
         endif()
         file(MAKE_DIRECTORY "${WEBVIEW2_DIR}")
         file(ARCHIVE_EXTRACT INPUT "${WEBVIEW2_NUPKG}" DESTINATION "${WEBVIEW2_DIR}")
         if(NOT EXISTS "${WEBVIEW2_HEADER}")
-            message(FATAL_ERROR "WebView2 SDK 解压后找不到头文件: ${WEBVIEW2_HEADER}")
+            message(FATAL_ERROR "WebView2 header missing after extract")
         endif()
     endif()
 
@@ -39,18 +34,12 @@ if(WIN32)
     set(WEBVIEW2_LIB "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
 endif()
 
-# ============================================================
-# sqlite3 amalgamation
-# ============================================================
 add_library(sqlite3 STATIC
     third_party/sqlite3/sqlite3.c
 )
 target_include_directories(sqlite3 PUBLIC third_party/sqlite3)
 target_compile_options(sqlite3 PRIVATE /w /utf-8)
 
-# ============================================================
-# 插件宿主进程
-# ============================================================
 add_executable(dm_plugin_host
     src/ipc/Pipe.cpp
     src/ipc/Framing.cpp
@@ -59,9 +48,6 @@ add_executable(dm_plugin_host
 target_include_directories(dm_plugin_host PRIVATE src)
 target_compile_options(dm_plugin_host PRIVATE /W3 /utf-8)
 
-# ============================================================
-# 主进程
-# ============================================================
 add_executable(dm_browser
     src/db/Database.cpp
     src/ipc/Pipe.cpp
@@ -76,15 +62,13 @@ target_include_directories(dm_browser PRIVATE src)
 target_link_libraries(dm_browser PRIVATE sqlite3)
 target_compile_options(dm_browser PRIVATE /W3 /utf-8)
 
-# ============================================================
-# Windows 专有：UI + 示例插件
-# ============================================================
 if(WIN32)
     target_link_libraries(dm_browser PRIVATE userenv)
 
-    # --- UI：WebView2 真实渲染 ---
+    # --- UI：HTML/CSS 双层 WebView2 ---
     add_executable(dm_ui
-        src/ui/RenderWindow.cpp
+        src/ui/BrowserWindow.cpp
+        src/ui/TabManager.cpp
         src/ui/ui_main.cpp
     )
     target_include_directories(dm_ui PRIVATE src "${WEBVIEW2_INCLUDE}")
@@ -94,7 +78,17 @@ if(WIN32)
     )
     target_compile_options(dm_ui PRIVATE /W3 /utf-8)
 
-    # --- 示例插件 DLL ---
+    # 复制 UI 资源到输出目录
+    add_custom_command(TARGET dm_ui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/ui/ui.html"
+            "$<TARGET_FILE_DIR:dm_ui>/ui.html"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/ui/start_page.html"
+            "$<TARGET_FILE_DIR:dm_ui>/start_page.html"
+        COMMENT "复制 UI 资源到输出目录"
+    )
+
     add_library(example_plugin SHARED
         src/plugin_sdk/example_plugin.cpp
     )
@@ -106,9 +100,6 @@ if(WIN32)
     target_compile_options(example_plugin PRIVATE /W3 /utf-8)
 endif()
 
-# ============================================================
-# 独立测试套件
-# ============================================================
 add_executable(dm_tests
     src/db/Database.cpp
     src/ipc/Pipe.cpp
