@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    height:100%; overflow:hidden;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+    font-size:13px;
+    background:#f5f7fa; color:#333;
+    user-select:none;
+  }
+
+  .header {
+    display:flex; align-items:center; height:40px;
+    padding:0 8px; background:#e8ecf0;
+    gap:4px; border-bottom:1px solid #d0d5dc;
+  }
+  .header .tab {
+    padding:6px 12px; border-radius:6px; cursor:pointer;
+    color:#666; font-size:12px;
+  }
+  .header .tab:hover { background:#dce1e6; color:#222; }
+  .header .tab.active { background:#fff; color:#000; box-shadow:0 1px 2px rgba(0,0,0,0.05); }
+  .header .close {
+    margin-left:auto; padding:4px 10px; border-radius:6px;
+    cursor:pointer; color:#888; font-size:14px;
+  }
+  .header .close:hover { background:#e74c3c; color:#fff; }
+
+  .status {
+    font-size:11px; color:#888; padding:4px 12px;
+    background:#e8ecf0; border-bottom:1px solid #d0d5dc;
+    flex-shrink:0;
+  }
+  .status.ok { color:#2e8b57; }
+  .status.err { color:#c0392b; }
+
+  .panel {
+    display:none;
+    height: calc(100% - 40px - 26px);
+    flex-direction:column;
+  }
+  .panel.active { display:flex; }
+
+  /* AI 对话 */
+  .chat { flex:1; overflow-y:auto; padding:12px; }
+  .msg {
+    margin-bottom:12px; padding:8px 12px; border-radius:8px;
+    white-space:pre-wrap; word-wrap:break-word;
+    line-height:1.6; font-size:12px;
+  }
+  .msg.user { background:#e1e5eb; margin-left:15%; color:#222; }
+  .msg.assistant { background:#fff; margin-right:15%; color:#222;
+                   border:1px solid #e0e4ea; }
+  .msg.error { background:#fdecea; color:#c0392b;
+               border:1px solid #f5c6cb; font-size:11px; }
+
+  .chat-input-bar {
+    display:flex; padding:8px; gap:8px;
+    background:#e8ecf0; border-top:1px solid #d0d5dc;
+    flex-shrink:0;
+  }
+  .chat-input-bar input {
+    flex:1; background:#fff; border:1px solid #d0d5dc; outline:none;
+    border-radius:8px; padding:8px 12px; color:#333;
+    font-size:13px; font-family:inherit;
+  }
+  .chat-input-bar input:focus { border-color:#4a90e2;
+                                box-shadow:0 0 0 2px rgba(74,144,226,0.15); }
+  .chat-input-bar button {
+    padding:0 16px; background:#4a90e2; border:none;
+    border-radius:8px; color:#fff; font-weight:bold;
+    cursor:pointer; font-size:13px;
+  }
+  .chat-input-bar button:hover { background:#3a7bc8; }
+  .chat-input-bar button:disabled {
+    background:#c4c9d0; color:#888; cursor:default;
+  }
+
+  .list { padding:8px; flex:1; overflow-y:auto; }
+  .list-item {
+    padding:10px 12px; border-radius:6px; cursor:pointer;
+    margin-bottom:4px; border-left:3px solid transparent;
+    background:#fff;
+  }
+  .list-item:hover { background:#f0f4f8; border-left-color:#4a90e2; }
+  .list-item .title {
+    color:#222; font-size:12px; margin-bottom:3px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .list-item .url {
+    color:#888; font-size:10px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .empty {
+    padding:40px 20px; text-align:center;
+    color:#999; font-size:12px;
+  }
+  .empty .hint {
+    font-size:11px; color:#bbb; margin-top:8px; display:block;
+  }
+
+  .settings-bar {
+    padding:4px 12px; background:#e8ecf0;
+    display:flex; align-items:center; gap:8px;
+    border-bottom:1px solid #d0d5dc; flex-shrink:0;
+  }
+  .settings-bar select, .settings-bar input {
+    background:#fff; border:1px solid #d0d5dc;
+    border-radius:4px; padding:3px 6px; color:#333;
+    font-size:11px; font-family:inherit;
+  }
+  .settings-bar label { font-size:11px; color:#888; }
+  .settings-bar button {
+    padding:3px 8px; background:#fff; border:1px solid #d0d5dc;
+    color:#333; border-radius:4px; cursor:pointer; font-size:11px;
+  }
+  .settings-bar button:hover { background:#f0f4f8; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="tab active" data-tab="ai">AI 助手</div>
+    <div class="tab" data-tab="privacy">隐私</div>
+    <div class="tab" data-tab="history">历史</div>
+    <div class="close" id="closeBtn">×</div>
+  </div>
+
+  <div class="status" id="status">Ollama: 检测中...</div>
+
+  <div class="settings-bar">
+    <label>模型</label>
+    <select id="modelSelect">
+      <option value="qwen2.5:7b">qwen2.5:7b</option>
+      <option value="gemma2">gemma2</option>
+    </select>
+    <button id="refreshBtn">检测</button>
+  </div>
+
+  <div class="panel active" id="panel-ai">
+    <div class="chat" id="chat"></div>
+    <div class="chat-input-bar">
+      <input id="chatInput" type="text" placeholder="问点什么... (Enter 发送)" />
+      <button id="chatSend">发送</button>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-privacy">
+    <div class="list" id="privacyList">
+      <div class="empty">
+        暂无审计记录
+        <span class="hint">隐私仪表板开发中</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-history">
+    <div class="list" id="historyList">
+      <div class="empty">暂无历史记录</div>
+    </div>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let chatHistory = [];
+  let aiChunks = {};
+
+  function send(msg) {
+    console.log('[Sidebar] send:', JSON.stringify(msg));
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage(JSON.stringify(msg));
+    }
+  }
+
+  // ===== 关闭按钮 =====
+  $('closeBtn').onclick = () => {
+    send({ type: 'toggleSidebar', open: false });
+  };
+
+  // ===== 标签切换 =====
+  if (!window._tabBound) {
+    window._tabBound = true;
+    document.querySelectorAll('.header .tab').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('.header .tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        $('panel-' + tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'privacy') send({ type: 'loadAudit' });
+        if (tab.dataset.tab === 'history') send({ type: 'loadHistory' });
+      };
+    });
+  }
+
+  // ===== 模型选择 =====
+  const modelSelect = $('modelSelect');
+  const savedModel = localStorage.getItem('ollamaModel');
+  if (savedModel) {
+    let found = false;
+    for (const opt of modelSelect.options) {
+      if (opt.value === savedModel) { found = true; break; }
+    }
+    if (!found) {
+      const opt = document.createElement('option');
+      opt.value = savedModel;
+      opt.textContent = savedModel;
+      modelSelect.appendChild(opt);
+    }
+    modelSelect.value = savedModel;
+  }
+  modelSelect.onchange = () => {
+    localStorage.setItem('ollamaModel', modelSelect.value);
+  };
+
+  $('refreshBtn').onclick = () => {
+    send({ type: 'checkOllama' });
+  };
+
+  // ===== AI 对话 =====
+  const chatEl = $('chat');
+
+  function appendChat(role, content) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + role;
+    el.textContent = content;
+    chatEl.appendChild(el);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return el;
+  }
+
+  function sendChat() {
+    const input = $('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    appendChat('user', text);
+    chatHistory.push({ role: 'user', content: text });
+    input.value = '';
+
+    const requestId = 'req-' + Date.now();
+    const el = appendChat('assistant', '');
+    aiChunks[requestId] = (chunk) => {
+      if (chunk === null) { delete aiChunks[requestId]; return; }
+      el.textContent += chunk;
+      chatEl.scrollTop = chatEl.scrollHeight;
+    };
+
+    send({
+      type: 'aiChat',
+      requestId: requestId,
+      endpoint: localStorage.getItem('ollamaEndpoint') || 'http://localhost:11434',
+      model: modelSelect.value || 'qwen2.5:7b',
+      history: chatHistory.slice(-10),
+      message: text
+    });
+  }
+
+  $('chatSend').onclick = sendChat;
+  $('chatInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendChat();
+  });
+
+  // ===== 接收 C++ 消息 =====
+  if (window.chrome && window.chrome.webview) {
+    window.chrome.webview.addEventListener('message', e => {
+      let msg;
+      try {
+        msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch (err) { return; }
+      if (!msg || !msg.type) return;
+
+      if (msg.type === 'aiChunk' && aiChunks[msg.requestId]) {
+        aiChunks[msg.requestId](msg.content);
+      }
+      if (msg.type === 'aiDone' && aiChunks[msg.requestId]) {
+        chatHistory.push({ role: 'assistant', content: msg.full || '' });
+        aiChunks[msg.requestId](null);
+      }
+      if (msg.type === 'aiError') {
+        appendChat('error', 'AI 错误: ' + msg.error);
+        if (msg.requestId && aiChunks[msg.requestId]) aiChunks[msg.requestId](null);
+      }
+      if (msg.type === 'ollamaStatus') {
+        const el = $('status');
+        el.textContent = 'Ollama: ' + msg.status;
+        el.className = 'status ' + (msg.ok ? 'ok' : 'err');
+      }
+      if (msg.type === 'modelList') {
+        modelSelect.innerHTML = '';
+        for (const m of msg.models) {
+          const opt = document.createElement('option');
+          opt.value = m; opt.textContent = m;
+          if (m === localStorage.getItem('ollamaModel')) opt.selected = true;
+          modelSelect.appendChild(opt);
+        }
+      }
+      if (msg.type === 'auditList') {
+        const list = $('privacyList');
+        if (!msg.items || !msg.items.length) {
+          list.innerHTML =
+            '<div class="empty">暂无审计记录' +
+            '<span class="hint">隐私仪表板开发中</span></div>';
+        } else {
+          list.innerHTML = '';
+          msg.items.forEach(it => {
+            const el = document.createElement('div');
+            el.className = 'list-item';
+            el.innerHTML = '<div class="title">' + it.endpoint + '.' + it.method + '</div>' +
+                           '<div class="url">' + it.pluginId + ' → ' + it.result + '</div>';
+            list.appendChild(el);
+          });
+        }
+      }
+      if (msg.type === 'historyList') {
+        const list = $('historyList');
+        if (!msg.items || !msg.items.length) {
+          list.innerHTML = '<div class="empty">暂无历史记录</div>';
+        } else {
+          list.innerHTML = '';
+          msg.items.forEach(it => {
+            const el = document.createElement('div');
+            el.className = 'list-item';
+            el.innerHTML = '<div class="title">' + (it.title || it.url) + '</div>' +
+                           '<div class="url">' + it.url + '</div>';
+            el.onclick = () => send({ type: 'navigate', url: it.url });
+            list.appendChild(el);
+          });
+        }
+      }
+    });
+  }
+
+  // 启动时检测 Ollama
+  // 启动时检测 Ollama（等 chrome.webview 就绪）
+  function tryCheckOllama(retries) {
+    if (window.chrome && window.chrome.webview) {
+      console.log('[Sidebar] chrome.webview 就绪，发送 checkOllama');
+      send({ type: 'checkOllama' });
+    } else if (retries > 0) {
+      setTimeout(() => tryCheckOllama(retries - 1), 200);
+    } else {
+      console.error('[Sidebar] chrome.webview 未就绪，放弃');
+    }
+  }
+  tryCheckOllama(15);
+</script>
+</body>
+</html>

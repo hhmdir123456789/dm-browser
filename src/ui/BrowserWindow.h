@@ -4,15 +4,25 @@
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <thread>
 #include <windows.h>
 #include <wrl.h>
 #include <WebView2.h>
 #include <WebView2EnvironmentOptions.h>
 #include "ui/TabManager.h"
+#include "ui/AiClient.h"
+#include "ui/SettingsStore.h"
 #include "db/Database.h"
 #include "Storage.h"
 
 namespace dm::ui {
+
+// 自定义消息：把后台线程的 AI 结果封送回主线程
+// WebView2 API 有线程亲和性，必须在创建它的线程（主线程）上调用
+#define WM_AI_CHUNK  (WM_APP + 1)
+#define WM_AI_ERROR  (WM_APP + 2)
+#define WM_AI_DONE   (WM_APP + 3)
+#define WM_OLLAMA_RESULT  (WM_APP + 4)
 
 class BrowserWindow {
 public:
@@ -29,6 +39,7 @@ private:
 
     void initWebView2Env();
     void onEnvReady();
+    void initSidebar();
 
     void createTab(const std::wstring& url = L"");
     void closeTab(int64_t id);
@@ -37,6 +48,7 @@ private:
 
     std::wstring loadUIHtml();
     std::wstring loadStartPage();
+    std::wstring loadSidebarHtml();
     std::wstring readFileAsWide(const std::string& path);
 
     void syncTabsToUI(bool force = false);
@@ -46,15 +58,31 @@ private:
     void sendBookmarksToContent();
 
     void handleUIMessage(const std::wstring& json);
+    void handleSidebarMessage(const std::wstring& json);
     void onContentNavCompleted(int64_t tabId);
 
+    void applyLayout();
     void layout();
     void updateLockIcon(const std::wstring& url);
 
+    // 侧边栏 / AI
+    void onToggleSidebar(bool open);
+    void onAiChat(const std::wstring& json);
+    void onCheckOllama();
+    void onLoadAudit();
+    void onLoadHistory();
+
     HWND hwnd_{nullptr};
 
+    // UI 层
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> uiController_;
     Microsoft::WRL::ComPtr<ICoreWebView2> uiWebView_;
+
+    // 侧边栏层
+    Microsoft::WRL::ComPtr<ICoreWebView2Controller> sidebarController_;
+    Microsoft::WRL::ComPtr<ICoreWebView2> sidebarWebView_;
+    bool sidebarOpen_{false};
+    int sidebarWidth_{380};
 
     TabManager tabs_;
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> env_;
@@ -74,9 +102,12 @@ private:
 
     std::wstring cachedUIHtml_;
     std::wstring cachedStartPage_;
+    std::wstring cachedSidebarHtml_;
 
     Database db_;
     std::unique_ptr<BookmarkStore> bookmarkStore_;
+    std::unique_ptr<SettingsStore> settings_;
+    AiClient aiClient_;
 };
 
 } // namespace dm::ui

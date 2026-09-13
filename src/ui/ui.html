@@ -4,326 +4,820 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin:0; padding:0; box-sizing:border-box; }
   html, body {
-    height: 100%;
-    overflow: hidden;
-    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-    font-size: 13px;
-    user-select: none;
-    background: #dce1e6;
-  }
-
-  .tabbar {
-    display: flex;
-    align-items: center;
-    height: 40px;
-    padding: 0 8px;
-    background: #dce1e6;
-    gap: 4px;
-  }
-  .tabs {
-    display: flex;
-    gap: 4px;
-    flex: 1;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-  .tabs::-webkit-scrollbar { display: none; }
-
-  .tab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 12px;
-    height: 32px;
-    border-radius: 8px 8px 0 0;
+    height:100%; overflow:hidden;
+    font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+    font-size:13px; user-select:none;
     background: transparent;
-    color: #333;
-    cursor: pointer;
-    transition: background 0.15s;
-    flex: 0 1 220px;
-    min-width: 100px;
-    max-width: 220px;
-    position: relative;
+  }
+  body { background: #dce1e6; }
+
+  /* ============ 模式切换 ============ */
+  body.traditional .cmd-entry,
+  body.traditional .sidebar,
+  body.traditional .cmd-palette,
+  body.traditional .sidebar-toggle { display: none !important; }
+  body.traditional .tab-status-dot { display: none !important; }
+
+  /* ============ 标签栏 ============ */
+  .tabbar {
+    display:flex; align-items:center; height:40px;
+    padding:0 8px; background:#dce1e6; gap:4px;
+  }
+  .tabs { display:flex; gap:4px; flex:1; overflow-x:auto; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tab {
+    display:flex; align-items:center; gap:6px;
+    padding:0 12px; height:32px; border-radius:8px 8px 0 0;
+    background:transparent; color:#333; cursor:pointer;
+    transition: background 0.15s; flex:0 1 220px;
+    min-width:100px; max-width:220px; position:relative;
   }
   .tab:hover { background: rgba(255,255,255,0.5); }
-  .tab.active {
-    background: #f5f7fa;
-    color: #000;
-    box-shadow: 0 -1px 2px rgba(0,0,0,0.05);
-  }
+  .tab.active { background:#f5f7fa; color:#000; }
+  .tab.pinned { flex: 0 0 42px; min-width:42px; max-width:42px; padding:0 8px; }
+  .tab.pinned .title, .tab.pinned .close { display:none; }
+  .tab.discarded { opacity:0.5; }
+  .tab.discarded .title::after { content:" (休眠)"; font-size:10px; color:#999; }
   .tab .favicon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4a90e2, #7b2ff7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 10px;
-    color: #fff;
-    font-weight: bold;
+    width:16px; height:16px; flex-shrink:0; border-radius:50%;
+    background: linear-gradient(135deg,#4a90e2,#7b2ff7);
+    display:flex; align-items:center; justify-content:center;
+    font-size:10px; color:#fff; font-weight:bold; overflow:hidden;
   }
+  .tab .favicon img { width:16px; height:16px; }
   .tab .title {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
+  .tab .tab-status-dot {
+    width:6px; height:6px; border-radius:50%; background:#4a90e2;
+    flex-shrink:0; display:none;
+  }
+  .tab.loading .tab-status-dot { display:block; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity:0.3; } 50% { opacity:1; } }
   .tab .close {
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    line-height: 1;
-    color: #666;
-    flex-shrink: 0;
+    width:22px; height:22px; border-radius:4px;
+    display:none; align-items:center; justify-content:center;
+    font-size:14px; color:#666; flex-shrink:0;
   }
-  .tab:hover .close,
-  .tab.active .close { display: flex; }
-  .tab .close:hover { background: rgba(0,0,0,0.1); color: #000; }
-
+  .tab:hover .close, .tab.active .close { display:flex; }
+  .tab .close:hover { background: rgba(0,0,0,0.1); color:#000; }
   .new-tab {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    color: #555;
-    cursor: pointer;
-    flex-shrink: 0;
-    margin-left: 4px;
+    width:28px; height:28px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; color:#555; cursor:pointer; flex-shrink:0; margin-left:4px;
   }
   .new-tab:hover { background: rgba(255,255,255,0.5); }
+  .cmd-entry {
+    padding:0 10px; height:26px; border-radius:13px;
+    background: rgba(255,255,255,0.7); color:#555;
+    display:flex; align-items:center; font-size:11px;
+    cursor:pointer; flex-shrink:0; gap:4px;
+  }
+  .cmd-entry:hover { background:#fff; }
+  .sidebar-toggle, .mode-toggle {
+    width:28px; height:28px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; color:#555; cursor:pointer; flex-shrink:0;
+  }
+  .sidebar-toggle:hover, .mode-toggle:hover { background: rgba(255,255,255,0.5); }
+  .sidebar-toggle.active { background: rgba(74,144,226,0.2); color:#4a90e2; }
 
+  /* ============ 工具栏 ============ */
   .toolbar {
-    display: flex;
-    align-items: center;
-    height: 48px;
-    padding: 0 12px;
-    background: #f5f7fa;
-    gap: 8px;
+    display:flex; align-items:center; height:48px;
+    padding:0 12px; background:#f5f7fa; gap:8px;
   }
   .btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #444;
-    cursor: pointer;
-    flex-shrink: 0;
-    font-size: 16px;
+    width:32px; height:32px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    color:#444; cursor:pointer; flex-shrink:0; font-size:16px;
   }
   .btn:hover { background: rgba(0,0,0,0.06); }
-  .btn:disabled { color: #bbb; cursor: default; }
+  .btn:disabled { color:#bbb; cursor:default; }
   .btn:disabled:hover { background: transparent; }
-
   .addr-wrap {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    height: 34px;
-    padding: 0 10px;
-    background: #fff;
-    border-radius: 17px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-    gap: 6px;
+    flex:1; display:flex; align-items:center; height:34px;
+    padding:0 10px; background:#fff; border-radius:17px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08); gap:6px;
   }
   .addr-wrap:focus-within {
     box-shadow: 0 0 0 2px rgba(0,120,212,0.3), 0 1px 2px rgba(0,0,0,0.08);
   }
-  .addr-wrap .lock {
-    font-size: 13px;
-    color: #666;
-    flex-shrink: 0;
-  }
+  .addr-wrap .lock { font-size:13px; color:#666; flex-shrink:0; }
   .addr-wrap input {
-    flex: 1;
-    border: none;
-    outline: none;
-    font-size: 13px;
-    color: #222;
-    background: transparent;
-    font-family: inherit;
+    flex:1; border:none; outline:none; font-size:13px;
+    color:#222; background: transparent; font-family:inherit;
   }
   .addr-wrap .icon-right {
-    font-size: 14px;
-    color: #666;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
+    font-size:14px; color:#666; cursor:pointer;
+    padding:4px; border-radius:4px;
   }
   .addr-wrap .icon-right:hover { background: rgba(0,0,0,0.06); }
+
+  /* ============ 侧边栏 ============ */
+  .sidebar {
+    position: fixed;
+    top: 88px; right: 0; bottom: 0;
+    width: 380px;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    display: none;
+    flex-direction: column;
+    border-left: 1px solid #313244;
+    z-index: 100;
+  }
+  .sidebar.open { display: flex; }
+  .sidebar-header {
+    display: flex; align-items: center; height: 40px;
+    padding: 0 8px; background: #181825;
+    gap: 4px; border-bottom: 1px solid #313244;
+    flex-shrink: 0;
+  }
+  .sidebar-header .tab {
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    color: #6c7086; font-size: 12px;
+  }
+  .sidebar-header .tab:hover { background: #313244; color: #cdd6f4; }
+  .sidebar-header .tab.active { background: #313244; color: #cdd6f4; }
+  .sidebar-header .close {
+    margin-left: auto; padding: 4px 8px; border-radius: 6px;
+    cursor: pointer; color: #6c7086;
+  }
+  .sidebar-header .close:hover { background: #f38ba8; color: #1e1e2e; }
+
+  .sidebar-status {
+    font-size: 11px; color: #6c7086; padding: 4px 12px;
+    background: #181825; border-bottom: 1px solid #313244;
+    flex-shrink: 0;
+  }
+  .sidebar-status.ok { color: #a6e3a1; }
+  .sidebar-status.err { color: #f38ba8; }
+
+  .sidebar-panel {
+    display: none; flex: 1; overflow-y: auto;
+    flex-direction: column;
+  }
+  .sidebar-panel.active { display: flex; }
+
+  .chat { flex: 1; overflow-y: auto; padding: 12px; }
+  .msg {
+    margin-bottom: 12px; padding: 8px 12px; border-radius: 8px;
+    white-space: pre-wrap; word-wrap: break-word; line-height: 1.6;
+    font-size: 12px;
+  }
+  .msg.user { background: #313244; margin-left: 15%; }
+  .msg.assistant { background: #181825; margin-right: 15%; }
+  .msg.error { background: #f38ba8; color: #1e1e2e; font-size: 11px; }
+
+  .chat-input-bar {
+    display: flex; padding: 8px; gap: 8px;
+    background: #181825; border-top: 1px solid #313244;
+    flex-shrink: 0;
+  }
+  .chat-input-bar input {
+    flex: 1; background: #313244; border: none; outline: none;
+    border-radius: 8px; padding: 8px 12px; color: #cdd6f4;
+    font-size: 13px; font-family: inherit;
+  }
+  .chat-input-bar button {
+    padding: 0 16px; background: #89b4fa; border: none;
+    border-radius: 8px; color: #1e1e2e; font-weight: bold;
+    cursor: pointer; font-size: 13px;
+  }
+
+  .list { padding: 8px; }
+  .list-item {
+    padding: 10px 12px; border-radius: 6px; cursor: pointer;
+    margin-bottom: 4px; border-left: 3px solid transparent;
+  }
+  .list-item:hover { background: #313244; border-left-color: #89b4fa; }
+  .list-item .title {
+    color: #cdd6f4; font-size: 12px; margin-bottom: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .list-item .url {
+    color: #6c7086; font-size: 10px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .empty {
+    padding: 40px 20px; text-align: center;
+    color: #585b70; font-size: 12px;
+  }
+
+  /* ============ 命令面板 ============ */
+  .cmd-palette {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: none; align-items: flex-start; justify-content: center;
+    padding-top: 12vh; z-index: 200;
+  }
+  .cmd-palette.open { display: flex; }
+  .cmd-box {
+    width: 600px; max-width: 90vw;
+    background: #1e1e2e; border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    overflow: hidden; display: flex; flex-direction: column;
+    max-height: 70vh;
+  }
+  .cmd-input {
+    padding: 16px 20px; border: none; outline: none;
+    background: transparent; color: #cdd6f4;
+    font-size: 16px; font-family: inherit;
+    border-bottom: 1px solid #313244;
+  }
+  .cmd-input::placeholder { color: #6c7086; }
+  .cmd-results {
+    overflow-y: auto; max-height: 50vh; padding: 8px;
+  }
+  .cmd-item {
+    padding: 10px 16px; border-radius: 8px; cursor: pointer;
+    display: flex; align-items: center; gap: 12px;
+    color: #cdd6f4; font-size: 13px;
+  }
+  .cmd-item:hover, .cmd-item.selected { background: #313244; }
+  .cmd-item .icon { width: 20px; text-align: center; opacity: 0.7; }
+  .cmd-item .hint { margin-left: auto; color: #6c7086; font-size: 11px; }
+  .cmd-hint {
+    padding: 8px 20px; color: #6c7086; font-size: 11px;
+    border-top: 1px solid #313244;
+  }
 </style>
 </head>
-<body>
+<body class="modern">
+
+  <!-- ============ 标签栏 ============ -->
   <div class="tabbar" id="tabbar">
     <div class="tabs" id="tabs"></div>
-    <div class="new-tab" id="newTab">+</div>
+    <div class="new-tab" id="newTab" title="新建标签 (Ctrl+T)">+</div>
+    <div class="cmd-entry" id="cmdBtn" title="命令面板 (Ctrl+K)">
+      <span>⌘K</span>
+    </div>
+    <div class="sidebar-toggle" id="sidebarToggle" title="侧边栏 (Ctrl+Shift+A)">▤</div>
+    <div class="mode-toggle" id="modeToggle" title="切换模式 (Ctrl+Shift+M)">⇄</div>
   </div>
 
+  <!-- ============ 工具栏 ============ -->
   <div class="toolbar">
-    <div class="btn" id="btnBack" title="后退">←</div>
-    <div class="btn" id="btnForward" title="前进">→</div>
-    <div class="btn" id="btnReload" title="刷新">↻</div>
+    <div class="btn" id="btnBack" title="后退 (Alt+←)">←</div>
+    <div class="btn" id="btnForward" title="前进 (Alt+→)">→</div>
+    <div class="btn" id="btnReload" title="刷新 (F5 / Ctrl+R)">↻</div>
     <div class="btn" id="btnHome" title="主页">⌂</div>
-
     <div class="addr-wrap">
       <span class="lock" id="lockIcon">📄</span>
       <input id="addrInput" type="text" placeholder="搜索或输入网址" />
       <span class="icon-right" id="btnStar" title="收藏">☆</span>
-      <span class="icon-right" title="更多">⋯</span>
+      <span class="icon-right" id="btnMore" title="更多">⋯</span>
     </div>
-
-    <div class="btn" title="设置">⚙</div>
+    <div class="btn" id="btnSettings" title="设置">⚙</div>
   </div>
 
-  <script>
-    let tabs = [];
-    let activeId = 0;
-    let userEditing = false;
+  <!-- ============ 侧边栏 ============ -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="tab active" data-tab="ai">AI 助手</div>
+      <div class="tab" data-tab="privacy">隐私</div>
+      <div class="tab" data-tab="history">历史</div>
+      <div class="close" id="sidebarClose">×</div>
+    </div>
+    <div class="sidebar-status" id="ollamaStatus">Ollama: 检测中...</div>
 
-    function send(msg) {
-      console.log('[UI] send: ' + JSON.stringify(msg));
-      if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(JSON.stringify(msg));
-      }
-    }
+    <div class="sidebar-panel active" id="panel-ai">
+      <div class="chat" id="chat"></div>
+      <div class="chat-input-bar">
+        <input id="chatInput" type="text" placeholder="问点什么... (Enter 发送)" />
+        <button id="chatSend">发送</button>
+      </div>
+    </div>
 
-    function renderTabs() {
-      const container = document.getElementById('tabs');
-      if (!container) return;
-      container.innerHTML = '';
-      for (const t of tabs) {
-        const el = document.createElement('div');
-        el.className = 'tab' + (t.id === activeId ? ' active' : '');
-        el.title = t.url || '';
+    <div class="sidebar-panel" id="panel-privacy">
+      <div class="list" id="privacyList">
+        <div class="empty">打开侧边栏后加载</div>
+      </div>
+    </div>
 
-        const fav = document.createElement('div');
-        fav.className = 'favicon';
-        fav.textContent = (t.title || '?')[0];
-        el.appendChild(fav);
+    <div class="sidebar-panel" id="panel-history">
+      <div class="list" id="historyList">
+        <div class="empty">暂无历史记录</div>
+      </div>
+    </div>
+  </div>
 
-        const title = document.createElement('div');
-        title.className = 'title';
-        title.textContent = t.title || '新标签页';
-        el.appendChild(title);
+  <!-- ============ 命令面板 ============ -->
+  <div class="cmd-palette" id="cmdPalette">
+    <div class="cmd-box">
+      <input class="cmd-input" id="cmdInput"
+             placeholder="输入网址、搜索、命令... (试试 '>' 看所有命令)" />
+      <div class="cmd-results" id="cmdResults"></div>
+      <div class="cmd-hint">
+        Enter 执行 · Esc 关闭 ·
+        前缀: &gt; 命令 · # 标签 · 问 AI · 搜 搜索
+      </div>
+    </div>
+  </div>
 
-        const close = document.createElement('div');
-        close.className = 'close';
-        close.textContent = '×';
-        el.appendChild(close);
+<script>
+  // ============================================================
+  // 状态
+  // ============================================================
+  let tabs = [];
+  let activeId = 0;
+  let userEditing = false;
+  let cmdVisible = false;
+  let cmdSelectedIdx = 0;
+  let cmdItems = [];
+  let chatHistory = [];
+  let aiChunks = {};
 
-        el.addEventListener('click', (e) => {
-          if (e.target === close) {
-            send({ type: 'closeTab', id: t.id });
-          } else {
-            send({ type: 'activateTab', id: t.id });
-          }
-        });
-        container.appendChild(el);
-      }
-    }
+  const $ = id => document.getElementById(id);
 
-    const addrInput = document.getElementById('addrInput');
-    if (addrInput) {
-      addrInput.addEventListener('focus', () => {
-        userEditing = true;
-        addrInput.select();
-      });
-      addrInput.addEventListener('blur', () => {
-        userEditing = false;
-      });
-      addrInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          send({ type: 'navigate', url: addrInput.value.trim() });
-          addrInput.blur();
-        }
-        if (e.key === 'Escape') {
-          addrInput.blur();
-        }
-        if (e.key === 'a' && e.ctrlKey) {
-          addrInput.select();
-        }
-      });
-    }
-
-    const btnNewTab = document.getElementById('newTab');
-    if (btnNewTab) btnNewTab.onclick = () => send({ type: 'newTab' });
-
-    const btnBack = document.getElementById('btnBack');
-    if (btnBack) btnBack.onclick = () => send({ type: 'back' });
-
-    const btnForward = document.getElementById('btnForward');
-    if (btnForward) btnForward.onclick = () => send({ type: 'forward' });
-
-    const btnReload = document.getElementById('btnReload');
-    if (btnReload) btnReload.onclick = () => send({ type: 'reload' });
-
-    const btnHome = document.getElementById('btnHome');
-    if (btnHome) btnHome.onclick = () => send({ type: 'home' });
-
-    const btnStar = document.getElementById('btnStar');
-    if (btnStar) btnStar.onclick = () => send({ type: 'star' });
-
-    const tabbarEl = document.getElementById('tabbar');
-    if (tabbarEl) {
-      tabbarEl.addEventListener('dblclick', (e) => {
-        if (e.target === tabbarEl ||
-            e.target.classList.contains('tabs')) {
-          send({ type: 'newTab' });
-        }
-      });
-    }
-
+  // ============================================================
+  // 与 C++ 通信
+  // ============================================================
+  function send(msg) {
+    console.log('[UI] send:', JSON.stringify(msg));
     if (window.chrome && window.chrome.webview) {
-      window.chrome.webview.addEventListener('message', (e) => {
-        let msg;
-        try {
-          msg = (typeof e.data === 'string') ? JSON.parse(e.data) : e.data;
-        } catch (err) {
-          console.error('[UI] JSON.parse failed:', err, e.data);
-          return;
-        }
-        if (!msg || !msg.type) return;
+      window.chrome.webview.postMessage(JSON.stringify(msg));
+    }
+  }
 
-        if (msg.type === 'updateTabs') {
-          tabs = msg.tabs;
-          activeId = msg.activeId;
-          renderTabs();
+  // ============================================================
+  // 模式切换
+  // ============================================================
+  function setMode(mode) {
+    if (mode === 'traditional') {
+      document.body.classList.add('traditional');
+      $('sidebar').classList.remove('open');
+      $('sidebarToggle').classList.remove('active');
+    } else {
+      document.body.classList.remove('traditional');
+    }
+    localStorage.setItem('uiMode', mode);
+    send({ type: 'setUIMode', mode: mode });
+  }
+  function toggleMode() {
+    const cur = document.body.classList.contains('traditional') ? 'modern' : 'traditional';
+    setMode(cur);
+  }
+
+  // ============================================================
+  // 标签渲染
+  // ============================================================
+  function renderTabs() {
+    const container = $('tabs');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const t of tabs) {
+      const el = document.createElement('div');
+      el.className = 'tab';
+      if (t.id === activeId) el.classList.add('active');
+      if (t.pinned) el.classList.add('pinned');
+      if (t.discarded) el.classList.add('discarded');
+      if (t.loading) el.classList.add('loading');
+      el.title = t.url || '';
+
+      const fav = document.createElement('div');
+      fav.className = 'favicon';
+      if (t.favicon) {
+        const img = document.createElement('img');
+        img.src = t.favicon;
+        img.draggable = false;
+        img.onerror = () => { fav.textContent = (t.title || '?')[0]; };
+        fav.appendChild(img);
+      } else {
+        fav.textContent = (t.title || '?')[0];
+      }
+      el.appendChild(fav);
+
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = t.title || '新标签页';
+      el.appendChild(title);
+
+      const dot = document.createElement('div');
+      dot.className = 'tab-status-dot';
+      el.appendChild(dot);
+
+      const close = document.createElement('div');
+      close.className = 'close';
+      close.textContent = '×';
+      el.appendChild(close);
+
+      el.addEventListener('click', (e) => {
+        if (e.target === close) send({ type: 'closeTab', id: t.id });
+        else send({ type: 'activateTab', id: t.id });
+      });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        send({ type: 'tabContextMenu', id: t.id, x: e.clientX, y: e.clientY });
+      });
+      container.appendChild(el);
+    }
+  }
+
+  // ============================================================
+  // 地址栏
+  // ============================================================
+  const addrInput = $('addrInput');
+  if (addrInput) {
+    addrInput.addEventListener('focus', () => {
+      userEditing = true;
+      addrInput.select();
+    });
+    addrInput.addEventListener('blur', () => { userEditing = false; });
+    addrInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = addrInput.value.trim();
+        if (val) send({ type: 'navigate', url: val });
+        addrInput.blur();
+      }
+      if (e.key === 'Escape') addrInput.blur();
+    });
+  }
+
+  // ============================================================
+  // 按钮绑定
+  // ============================================================
+  $('newTab').onclick = () => send({ type: 'newTab' });
+  $('btnBack').onclick = () => send({ type: 'back' });
+  $('btnForward').onclick = () => send({ type: 'forward' });
+  $('btnReload').onclick = () => send({ type: 'reload' });
+  $('btnHome').onclick = () => send({ type: 'home' });
+  $('btnStar').onclick = () => send({ type: 'star' });
+  $('btnMore').onclick = () => openCmd('> ');
+  $('btnSettings').onclick = () => openCmd('> 设置');
+  $('cmdBtn').onclick = () => openCmd();
+  $('modeToggle').onclick = toggleMode;
+  $('sidebarToggle').onclick = toggleSidebar;
+  $('sidebarClose').onclick = toggleSidebar;
+
+  // ============================================================
+  // 侧边栏
+  // ============================================================
+  function toggleSidebar() {
+    console.log('[UI] toggleSidebar 被调用');
+    const sb = $('sidebar');
+    const wasOpen = sb.classList.contains('open');
+    console.log('[UI] wasOpen =', wasOpen);
+    if (wasOpen) {
+      sb.classList.remove('open');
+      $('sidebarToggle').classList.remove('active');
+      send({ type: 'toggleSidebar', open: false });
+    } else {
+      sb.classList.add('open');
+      $('sidebarToggle').classList.add('active');
+      send({ type: 'toggleSidebar', open: true });
+      send({ type: 'loadAudit' });
+      send({ type: 'loadHistory' });
+    }
+  }
+
+  document.querySelectorAll('.sidebar-header .tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('.sidebar-header .tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      $('panel-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'privacy') send({ type: 'loadAudit' });
+      if (tab.dataset.tab === 'history') send({ type: 'loadHistory' });
+    };
+  });
+
+  // ============================================================
+  // AI 对话
+  // ============================================================
+  const chatEl = $('chat');
+
+  function appendChat(role, content) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + role;
+    el.textContent = content;
+    chatEl.appendChild(el);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return el;
+  }
+
+  function sendChat() {
+    const input = $('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    appendChat('user', text);
+    chatHistory.push({ role: 'user', content: text });
+    input.value = '';
+
+    const requestId = 'req-' + Date.now();
+    const el = appendChat('assistant', '');
+    aiChunks[requestId] = (chunk) => {
+      if (chunk === null) { delete aiChunks[requestId]; return; }
+      el.textContent += chunk;
+      chatEl.scrollTop = chatEl.scrollHeight;
+    };
+
+    send({
+      type: 'aiChat',
+      requestId: requestId,
+      endpoint: localStorage.getItem('ollamaEndpoint') || 'http://localhost:11434',
+      model: localStorage.getItem('ollamaModel') || 'llama3.2',
+      history: chatHistory.slice(-10),
+      message: text
+    });
+  }
+
+  $('chatSend').onclick = sendChat;
+  $('chatInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendChat();
+  });
+
+  // ============================================================
+  // 命令面板
+  // ============================================================
+  const cmdPalette = $('cmdPalette');
+  const cmdInput = $('cmdInput');
+  const cmdResults = $('cmdResults');
+
+  function openCmd(initialText) {
+    if (document.body.classList.contains('traditional')) return;
+    cmdPalette.classList.add('open');
+    cmdVisible = true;
+    cmdInput.value = initialText || '';
+    cmdInput.focus();
+    updateCmdResults();
+    send({ type: 'cmdPalette', open: true });
+  }
+
+  function closeCmd() {
+    if (!cmdVisible) return;
+    cmdPalette.classList.remove('open');
+    cmdVisible = false;
+    cmdInput.value = '';
+    send({ type: 'cmdPalette', open: false });
+  }
+
+  const COMMANDS = [
+    { icon:'+', title:'新建标签',    hint:'Ctrl+T', action:() => send({type:'newTab'}) },
+    { icon:'◀', title:'后退',        hint:'Alt+←',  action:() => send({type:'back'}) },
+    { icon:'▶', title:'前进',        hint:'Alt+→',  action:() => send({type:'forward'}) },
+    { icon:'↻', title:'刷新',        hint:'F5',     action:() => send({type:'reload'}) },
+    { icon:'⌂', title:'主页',                       action:() => send({type:'home'}) },
+    { icon:'▤', title:'切换侧边栏',  hint:'Ctrl+Shift+A', action:toggleSidebar },
+    { icon:'⇄', title:'切换传统/现代模式', hint:'Ctrl+Shift+M', action:toggleMode },
+    { icon:'🤖', title:'问 AI',      hint:'问 ...',  action:() => cmdInput.value = '问 ' },
+    { icon:'⏱', title:'历史记录',                   action:() => { closeCmd(); send({type:'loadHistory'}); if(!$('sidebar').classList.contains('open')) toggleSidebar(); } },
+    { icon:'🔒', title:'隐私仪表板',                 action:() => { closeCmd(); send({type:'loadAudit'}); if(!$('sidebar').classList.contains('open')) toggleSidebar(); } },
+    { icon:'⚙', title:'设置',                        action:() => { closeCmd(); send({type:'openSettings'}); } },
+    { icon:'ℹ', title:'关于',                        action:() => { closeCmd(); alert('大明DM浏览器 v0.1.0\n新一代本地浏览器'); } },
+  ];
+
+  function updateCmdResults() {
+    const q = cmdInput.value.trim();
+    cmdItems = [];
+    cmdResults.innerHTML = '';
+
+    if (q.startsWith('>')) {
+      const cmdQ = q.slice(1).trim().toLowerCase();
+      const filtered = COMMANDS.filter(c => c.title.toLowerCase().includes(cmdQ));
+      filtered.forEach(c => {
+        cmdItems.push({
+          icon: c.icon, title: c.title, hint: c.hint,
+          run: () => { closeCmd(); c.action(); }
+        });
+      });
+    } else if (q.startsWith('#')) {
+      const tabQ = q.slice(1).trim().toLowerCase();
+      tabs.filter(t => (t.title || '').toLowerCase().includes(tabQ) ||
+                       (t.url || '').toLowerCase().includes(tabQ))
+          .forEach(t => {
+        cmdItems.push({
+          icon:'📄', title: t.title || t.url, hint:'标签',
+          run: () => { closeCmd(); send({type:'activateTab', id:t.id}); }
+        });
+      });
+    } else if (q.startsWith('问 ')) {
+      cmdItems.push({
+        icon:'🤖', title:'问 AI: ' + q.slice(2),
+        hint:'Enter 发送',
+        run: () => {
+          const text = q.slice(2);
+          closeCmd();
+          if (!$('sidebar').classList.contains('open')) toggleSidebar();
+          $('chatInput').value = text;
+          sendChat();
         }
-        if (msg.type === 'updateAddress') {
-          if (!userEditing && addrInput) {
-            addrInput.value = msg.url || '';
-          }
-        }
-        if (msg.type === 'updateNavState') {
-          const b = document.getElementById('btnBack');
-          const f = document.getElementById('btnForward');
-          if (b) b.disabled = !msg.canBack;
-          if (f) f.disabled = !msg.canForward;
-        }
-        if (msg.type === 'updateLock') {
-          const lock = document.getElementById('lockIcon');
-          if (lock) lock.textContent = msg.icon;
-        }
+      });
+    } else if (q.startsWith('搜 ')) {
+      const term = q.slice(2);
+      cmdItems.push({
+        icon:'🔍', title:'搜索: ' + term, hint:'Enter',
+        run: () => { closeCmd(); send({type:'navigate', url: term}); }
+      });
+    } else if (q) {
+      cmdItems.push({
+        icon:'🌐', title:'访问: ' + q, hint:'Enter',
+        run: () => { closeCmd(); send({type:'navigate', url: q}); }
+      });
+      tabs.filter(t => (t.title || '').toLowerCase().includes(q.toLowerCase()))
+          .slice(0, 5)
+          .forEach(t => {
+        cmdItems.push({
+          icon:'📄', title: t.title || t.url, hint:'切换到标签',
+          run: () => { closeCmd(); send({type:'activateTab', id:t.id}); }
+        });
+      });
+    } else {
+      COMMANDS.forEach(c => {
+        cmdItems.push({
+          icon: c.icon, title: c.title, hint: c.hint,
+          run: () => { closeCmd(); c.action(); }
+        });
       });
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
-      send({ type: 'uiReady' });
+    cmdItems.forEach((item, i) => {
+      const el = document.createElement('div');
+      el.className = 'cmd-item' + (i === 0 ? ' selected' : '');
+      el.innerHTML = '<span class="icon">' + item.icon + '</span>' +
+                     '<span>' + item.title + '</span>' +
+                     (item.hint ? '<span class="hint">' + item.hint + '</span>' : '');
+      el.onclick = () => item.run();
+      cmdResults.appendChild(el);
     });
-  </script>
+    cmdSelectedIdx = 0;
+  }
+
+  cmdInput.addEventListener('input', updateCmdResults);
+  cmdInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeCmd(); }
+    else if (e.key === 'Enter') {
+      if (cmdItems[cmdSelectedIdx]) cmdItems[cmdSelectedIdx].run();
+      else if (cmdInput.value.trim()) {
+        const v = cmdInput.value.trim();
+        closeCmd();
+        send({ type: 'navigate', url: v });
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      cmdSelectedIdx = Math.min(cmdSelectedIdx + 1, cmdItems.length - 1);
+      updateCmdSelection();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      cmdSelectedIdx = Math.max(cmdSelectedIdx - 1, 0);
+      updateCmdSelection();
+    }
+  });
+
+  function updateCmdSelection() {
+    const items = cmdResults.querySelectorAll('.cmd-item');
+    items.forEach((el, i) => el.classList.toggle('selected', i === cmdSelectedIdx));
+    if (items[cmdSelectedIdx]) items[cmdSelectedIdx].scrollIntoView({ block:'nearest' });
+  }
+
+  cmdPalette.onclick = (e) => { if (e.target === cmdPalette) closeCmd(); };
+
+  // ============================================================
+  // 全局快捷键
+  // ============================================================
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault();
+      if (cmdVisible) closeCmd(); else openCmd();
+      return;
+    }
+    if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+      e.preventDefault();
+      toggleSidebar();
+      return;
+    }
+    if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
+      e.preventDefault();
+      toggleMode();
+      return;
+    }
+    if (e.ctrlKey && (e.key === 'l' || e.key === 'L')) {
+      e.preventDefault();
+      addrInput.focus();
+      addrInput.select();
+      return;
+    }
+    if (e.key === 'Escape' && cmdVisible) {
+      closeCmd();
+    }
+  });
+
+  // ============================================================
+  // 接收 C++ 消息
+  // ============================================================
+  if (window.chrome && window.chrome.webview) {
+    window.chrome.webview.addEventListener('message', (e) => {
+      let msg;
+      try {
+        msg = (typeof e.data === 'string') ? JSON.parse(e.data) : e.data;
+      } catch (err) {
+        console.error('[UI] JSON.parse failed:', err, e.data);
+        return;
+      }
+      if (!msg || !msg.type) return;
+
+      if (msg.type === 'updateTabs') {
+        tabs = msg.tabs;
+        activeId = msg.activeId;
+        renderTabs();
+      }
+      if (msg.type === 'updateAddress') {
+        if (!userEditing && addrInput) addrInput.value = msg.url || '';
+      }
+      if (msg.type === 'updateNavState') {
+        $('btnBack').disabled = !msg.canBack;
+        $('btnForward').disabled = !msg.canForward;
+      }
+      if (msg.type === 'updateLock') {
+        $('lockIcon').textContent = msg.icon || '📄';
+      }
+      if (msg.type === 'updateStar') {
+        $('btnStar').textContent = msg.starred ? '★' : '☆';
+      }
+      if (msg.type === 'focusAddress') {
+        addrInput.focus();
+        addrInput.select();
+      }
+      if (msg.type === 'sidebarState') {
+        const sb = $('sidebar');
+        const st = $('sidebarToggle');
+        if (msg.open) {
+          sb.classList.add('open');
+          st.classList.add('active');
+        } else {
+          sb.classList.remove('open');
+          st.classList.remove('active');
+        }
+      }
+      if (msg.type === 'aiChunk' && aiChunks[msg.requestId]) {
+        aiChunks[msg.requestId](msg.content);
+      }
+      if (msg.type === 'aiDone' && aiChunks[msg.requestId]) {
+        chatHistory.push({ role: 'assistant', content: msg.full || '' });
+        aiChunks[msg.requestId](null);
+      }
+      if (msg.type === 'aiError') {
+        appendChat('error', 'AI 错误: ' + msg.error);
+        if (msg.requestId && aiChunks[msg.requestId]) aiChunks[msg.requestId](null);
+      }
+      if (msg.type === 'ollamaStatus') {
+        const el = $('ollamaStatus');
+        el.textContent = 'Ollama: ' + msg.status;
+        el.className = 'sidebar-status ' + (msg.ok ? 'ok' : 'err');
+      }
+      if (msg.type === 'auditList') {
+        const list = $('privacyList');
+        if (!msg.items || !msg.items.length) {
+          list.innerHTML = '<div class="empty">暂无审计记录</div>';
+        } else {
+          list.innerHTML = '';
+          msg.items.forEach(it => {
+            const el = document.createElement('div');
+            el.className = 'list-item';
+            el.innerHTML = '<div class="title">' + it.endpoint + '.' + it.method + '</div>' +
+                           '<div class="url">' + it.pluginId + ' → ' + it.result + '</div>';
+            list.appendChild(el);
+          });
+        }
+      }
+      if (msg.type === 'historyList') {
+        const list = $('historyList');
+        if (!msg.items || !msg.items.length) {
+          list.innerHTML = '<div class="empty">暂无历史记录</div>';
+        } else {
+          list.innerHTML = '';
+          msg.items.forEach(it => {
+            const el = document.createElement('div');
+            el.className = 'list-item';
+            el.innerHTML = '<div class="title">' + (it.title || it.url) + '</div>' +
+                           '<div class="url">' + it.url + '</div>';
+            el.onclick = () => send({ type: 'navigate', url: it.url });
+            list.appendChild(el);
+          });
+        }
+      }
+      if (msg.type === 'openSettings') {
+        const ep = prompt('Ollama 端点:', localStorage.getItem('ollamaEndpoint') || 'http://localhost:11434');
+        if (ep !== null) localStorage.setItem('ollamaEndpoint', ep);
+        const md = prompt('Ollama 模型:', localStorage.getItem('ollamaModel') || 'llama3.2');
+        if (md !== null) localStorage.setItem('ollamaModel', md);
+        send({ type: 'checkOllama' });
+      }
+    });
+  }
+
+  // ============================================================
+  // 启动
+  // ============================================================
+  window.addEventListener('DOMContentLoaded', () => {
+    const savedMode = localStorage.getItem('uiMode') || 'modern';
+    setMode(savedMode);
+    send({ type: 'uiReady' });
+    send({ type: 'checkOllama' });
+  });
+</script>
 </body>
 </html>

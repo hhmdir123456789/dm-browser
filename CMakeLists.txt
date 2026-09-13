@@ -67,12 +67,14 @@ if(WIN32)
         src/ui/BrowserWindow.cpp
         src/ui/TabManager.cpp
         src/ui/ui_main.cpp
+        src/ui/AiClient.cpp
     )
     target_include_directories(dm_ui PRIVATE src "${WEBVIEW2_INCLUDE}")
     target_link_libraries(dm_ui PRIVATE
         sqlite3
         "${WEBVIEW2_LIB}"
         shlwapi ole32 oleaut32
+        winhttp
     )
     target_compile_options(dm_ui PRIVATE /W3 /utf-8)
 
@@ -80,6 +82,9 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/src/ui/ui.html"
             "$<TARGET_FILE_DIR:dm_ui>/ui.html"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/src/ui/sidebar.html"
+            "$<TARGET_FILE_DIR:dm_ui>/sidebar.html"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/src/ui/start_page.html"
             "$<TARGET_FILE_DIR:dm_ui>/start_page.html"
@@ -124,6 +129,7 @@ install(TARGETS dm_browser dm_plugin_host dm_tests dm_ui example_plugin
         RUNTIME DESTINATION bin)
 install(FILES
         "${CMAKE_SOURCE_DIR}/src/ui/ui.html"
+        "${CMAKE_SOURCE_DIR}/src/ui/sidebar.html"
         "${CMAKE_SOURCE_DIR}/src/ui/start_page.html"
         DESTINATION bin)
 

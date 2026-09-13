@@ -15,6 +15,9 @@ struct Tab {
     std::wstring url{L""};
     std::wstring faviconUrl{L""};
     bool loading{false};
+    bool pinned{false};
+    bool discarded{false};      // 休眠
+    std::wstring group{L""};    // 按域名分组
     bool navHandlerRegistered{false};
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;
     Microsoft::WRL::ComPtr<ICoreWebView2> webview;
@@ -31,6 +34,13 @@ public:
     std::vector<std::shared_ptr<Tab>> allMutable();
     size_t count() const;
     int64_t activeId() const;
+
+    // 智能标签
+    bool setPinned(int64_t id, bool pinned);
+    bool setDiscarded(int64_t id, bool discarded);
+    int closeOthers(int64_t id);   // 返回关闭数量
+    int closeRight(int64_t id);
+    void groupByDomain();          // 按域名给所有标签打组
 
 private:
     void fixActiveId();

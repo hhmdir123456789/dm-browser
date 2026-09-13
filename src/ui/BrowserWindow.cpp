@@ -4,6 +4,9 @@
 #include <fstream>
 #include <cstdint>
 #include <algorithm>
+#include <thread>
+#include <vector>
+#include <utility>
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ole32.lib")
@@ -13,6 +16,9 @@ namespace dm::ui {
 
 static const wchar_t* kClassName = L"DMBrowserWindow";
 
+// ============================================================
+// 工具函数
+// ============================================================
 static std::string wideToUtf8(const std::wstring& w) {
     if (w.empty()) return "";
     int size = WideCharToMultiByte(CP_UTF8, 0, w.c_str(),
@@ -76,11 +82,16 @@ static std::wstring urlEncode(const std::wstring& s) {
     return out;
 }
 
+// ============================================================
+// 构造 / 析构
+// ============================================================
 BrowserWindow::BrowserWindow() = default;
 
 BrowserWindow::~BrowserWindow() {
     bookmarkStore_.reset();
+    settings_.reset();
     db_.close();
+    if (sidebarController_) sidebarController_->Close();
     if (uiController_) uiController_->Close();
     for (auto& t : tabs_.allMutable()) {
         if (t->controller) t->controller->Close();
@@ -89,6 +100,9 @@ BrowserWindow::~BrowserWindow() {
     if (hwnd_) DestroyWindow(hwnd_);
 }
 
+// ============================================================
+// 创建窗口
+// ============================================================
 bool BrowserWindow::create(const std::wstring& title, int w, int h) {
     width_ = w; height_ = h;
 
@@ -99,6 +113,8 @@ bool BrowserWindow::create(const std::wstring& title, int w, int h) {
                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                  "title TEXT, url TEXT, created_at INTEGER)");
         bookmarkStore_ = std::make_unique<BookmarkStore>(db_);
+        settings_ = std::make_unique<SettingsStore>(db_);
+        settings_->init();
     } else {
         std::cerr << "[UI] 打开数据库失败: " << r.error().msg << "\n";
     }
@@ -127,6 +143,9 @@ bool BrowserWindow::create(const std::wstring& title, int w, int h) {
     return true;
 }
 
+// ============================================================
+// WebView2 环境
+// ============================================================
 void BrowserWindow::initWebView2Env() {
     auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
     CreateCoreWebView2EnvironmentWithOptions(
@@ -156,6 +175,8 @@ void BrowserWindow::onEnvReady() {
                 }
                 uiController_ = ctrl;
                 ctrl->get_CoreWebView2(&uiWebView_);
+
+                ctrl->put_ZoomFactor(1.0);
 
                 RECT uiBounds{0, 0, width_, uiHeight_};
                 ctrl->put_Bounds(uiBounds);
@@ -189,14 +210,82 @@ void BrowserWindow::onEnvReady() {
                 std::wstring html = loadUIHtml();
                 if (!html.empty()) {
                     std::cout << "[UI] 加载 ui.html (" << html.size() << " 字节)\n";
-                    uiWebView_->NavigateToString(html.c_str());
+
+                    // 用虚拟主机映射，给页面一个 https origin，这样 localStorage 才能用
+                    Microsoft::WRL::ComPtr<ICoreWebView2_3> wv3;
+                    if (SUCCEEDED(uiWebView_->QueryInterface(IID_PPV_ARGS(&wv3)))) {
+                        std::wstring dir = utf8ToWide(getExeDir());
+                        wv3->SetVirtualHostNameToFolderMapping(
+                            L"dm.local",
+                            dir.c_str(),
+                            COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+                        uiWebView_->Navigate(L"https://dm.local/ui.html");
+                    } else {
+                        uiWebView_->NavigateToString(html.c_str());
+                    }
                 }
 
                 if (tabs_.count() == 0) createTab(L"");
+                initSidebar();
                 return S_OK;
             }).Get());
 }
 
+// ============================================================
+// 侧边栏 WebView2
+// ============================================================
+void BrowserWindow::initSidebar() {
+    env_->CreateCoreWebView2Controller(hwnd_,
+        Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+            [this](HRESULT result, ICoreWebView2Controller* ctrl) -> HRESULT {
+                if (FAILED(result) || !ctrl) {
+                    std::cerr << "[UI] 侧边栏 controller 创建失败\n";
+                    return S_OK;
+                }
+                sidebarController_ = ctrl;
+                ctrl->get_CoreWebView2(&sidebarWebView_);
+
+                ctrl->put_ZoomFactor(1.0);
+
+                RECT b{width_ - sidebarWidth_, uiHeight_, width_, height_};
+                ctrl->put_Bounds(b);
+                ctrl->put_IsVisible(FALSE);
+
+                sidebarWebView_->add_WebMessageReceived(
+                    Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                        [this](ICoreWebView2*,
+                               ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                            LPWSTR json = nullptr;
+                            if (SUCCEEDED(args->TryGetWebMessageAsString(&json)) && json) {
+                                handleSidebarMessage(json);
+                                CoTaskMemFree(json);
+                            }
+                            return S_OK;
+                        }).Get(), nullptr);
+
+                std::wstring html = loadSidebarHtml();
+                if (!html.empty()) {
+                    std::cout << "[UI] 加载 sidebar.html (" << html.size() << " 字节)\n";
+
+                    Microsoft::WRL::ComPtr<ICoreWebView2_3> wv3;
+                    if (SUCCEEDED(sidebarWebView_->QueryInterface(IID_PPV_ARGS(&wv3)))) {
+                        std::wstring dir = utf8ToWide(getExeDir());
+                        wv3->SetVirtualHostNameToFolderMapping(
+                            L"dm.local",
+                            dir.c_str(),
+                            COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+                        sidebarWebView_->Navigate(L"https://dm.local/sidebar.html");
+                    } else {
+                        sidebarWebView_->NavigateToString(html.c_str());
+                    }
+                }
+                return S_OK;
+            }).Get());
+}
+
+// ============================================================
+// 文件读取
+// ============================================================
 std::wstring BrowserWindow::readFileAsWide(const std::string& path) {
     std::lock_guard lock(fileMutex_);
     std::ifstream f(path, std::ios::binary);
@@ -226,6 +315,18 @@ std::wstring BrowserWindow::loadStartPage() {
     return cachedStartPage_;
 }
 
+std::wstring BrowserWindow::loadSidebarHtml() {
+    if (!cachedSidebarHtml_.empty()) return cachedSidebarHtml_;
+    cachedSidebarHtml_ = readFileAsWide("sidebar.html");
+    if (cachedSidebarHtml_.empty()) {
+        cachedSidebarHtml_ = readFileAsWide(getExeDir() + "sidebar.html");
+    }
+    return cachedSidebarHtml_;
+}
+
+// ============================================================
+// 创建标签
+// ============================================================
 void BrowserWindow::createTab(const std::wstring& url) {
     {
         std::lock_guard lock(createMutex_);
@@ -259,11 +360,12 @@ void BrowserWindow::createTab(const std::wstring& url) {
                 ctrl->get_CoreWebView2(&t->webview);
                 ctrl->put_ZoomFactor(1.0);
 
-                RECT bounds{0, uiHeight_, width_, height_};
+                RECT bounds{0, uiHeight_,
+                            sidebarOpen_ ? width_ - sidebarWidth_ : width_,
+                            height_};
                 ctrl->put_Bounds(bounds);
                 ctrl->put_IsVisible(tabs_.activeId() == id ? TRUE : FALSE);
 
-                // 内容层消息接收
                 t->webview->add_WebMessageReceived(
                     Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                         [this](ICoreWebView2*,
@@ -303,14 +405,17 @@ void BrowserWindow::createTab(const std::wstring& url) {
                 }
 
                 syncTabsToUI(true);
-                layout();
-                activateTab(id);                              // ← 新增：重新激活，确保可见
-                InvalidateRect(hwnd_, nullptr, TRUE);         // ← 新增：强制重绘
-                UpdateWindow(hwnd_);                          // ← 新增：立即刷新
+                applyLayout();
+                activateTab(id);
+                InvalidateRect(hwnd_, nullptr, TRUE);
+                UpdateWindow(hwnd_);
                 return S_OK;
             }).Get());
 }
 
+// ============================================================
+// 关闭 / 激活 / 导航
+// ============================================================
 void BrowserWindow::closeTab(int64_t id) {
     auto t = tabs_.get(id);
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> ctrl;
@@ -330,7 +435,9 @@ void BrowserWindow::activateTab(int64_t id) {
     for (auto& t : tabs_.allMutable()) {
         if (t->controller) {
             if (t->id == id) {
-                RECT bounds{0, uiHeight_, width_, height_};
+                RECT bounds{0, uiHeight_,
+                            sidebarOpen_ ? width_ - sidebarWidth_ : width_,
+                            height_};
                 t->controller->put_Bounds(bounds);
                 t->controller->put_IsVisible(TRUE);
             } else {
@@ -362,6 +469,8 @@ void BrowserWindow::navigateActive(const std::wstring& url) {
             syncAddressToUI(L"dm://start");
             updateLockIcon(L"dm://start");
             syncTabsToUI(true);
+            InvalidateRect(hwnd_, nullptr, TRUE);
+            UpdateWindow(hwnd_);
         }
         return;
     }
@@ -371,6 +480,7 @@ void BrowserWindow::navigateActive(const std::wstring& url) {
         finalUrl = L"https://" + finalUrl;
     }
 
+
     t->url = finalUrl;
     std::wstring enc = urlEncode(finalUrl);
     t->webview->Navigate(enc.c_str());
@@ -378,8 +488,14 @@ void BrowserWindow::navigateActive(const std::wstring& url) {
     updateLockIcon(finalUrl);
     syncStarStateToUI(false);
     syncTabsToUI(true);
+
+
+
 }
 
+// ============================================================
+// 导航完成 + favicon
+// ============================================================
 void BrowserWindow::onContentNavCompleted(int64_t tabId) {
     auto t = tabs_.get(tabId);
     if (!t || !t->webview) return;
@@ -394,6 +510,7 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
                 if (!tt) return S_OK;
 
                 tt->loading = false;
+                tt->discarded = false;
 
                 LPWSTR uri = nullptr;
                 sender->get_Source(&uri);
@@ -415,6 +532,12 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
                     CoTaskMemFree(title);
                 }
 
+                if (settings_ && !tt->url.empty() &&
+                    tt->url.rfind(L"dm://", 0) != 0) {
+                    settings_->addHistory(wideToUtf8(tt->url),
+                                          wideToUtf8(tt->title));
+                }
+
                 BOOL canBack = FALSE, canForward = FALSE;
                 sender->get_CanGoBack(&canBack);
                 sender->get_CanGoForward(&canForward);
@@ -422,6 +545,7 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
                     syncNavStateToUI(canBack, canForward);
                 }
 
+                tabs_.groupByDomain();
                 syncTabsToUI();
                 return S_OK;
             }).Get(), nullptr);
@@ -482,17 +606,15 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
     }
 }
 
+// ============================================================
+// UI 同步
+// ============================================================
 void BrowserWindow::syncTabsToUI(bool force) {
-    std::cout << "[C++] syncTabsToUI 被调用, force=" << force
-              << ", uiWebView_=" << (uiWebView_ ? "yes" : "null") << "\n";
     if (!uiWebView_) return;
 
     ULONGLONG now = GetTickCount64();
     ULONGLONG last = lastSyncMs_.load();
-    if (!force && last != 0 && now - last < 200) {
-        std::cout << "[C++] syncTabsToUI 被节流跳过\n";
-        return;
-    }
+    if (!force && last != 0 && now - last < 200) return;
     lastSyncMs_.store(now);
 
     std::lock_guard lock(syncMutex_);
@@ -510,12 +632,12 @@ void BrowserWindow::syncTabsToUI(bool force) {
              << L",\"title\":\"" << escapeJson(t->title) << L"\""
              << L",\"url\":\"" << escapeJson(t->url) << L"\""
              << L",\"favicon\":\"" << escapeJson(fav) << L"\""
+             << L",\"pinned\":" << (t->pinned ? L"true" : L"false")
+             << L",\"discarded\":" << (t->discarded ? L"true" : L"false")
              << L",\"loading\":" << (t->loading ? L"true" : L"false")
              << L"}";
     }
     json << L"]}";
-
-    std::wcout << L"[C++] syncTabsToUI 发送: " << json.str() << L"\n";
     uiWebView_->PostWebMessageAsString(json.str().c_str());
 }
 
@@ -580,9 +702,10 @@ void BrowserWindow::updateLockIcon(const std::wstring& url) {
     uiWebView_->PostWebMessageAsString(json.str().c_str());
 }
 
+// ============================================================
+// UI 消息处理
+// ============================================================
 void BrowserWindow::handleUIMessage(const std::wstring& json) {
-    std::wcout << L"[C++] 收到 UI 消息: " << json << L"\n";
-
     auto findType = [&json](const std::wstring& key) -> std::wstring {
         auto pos = json.find(L"\"" + key + L"\"");
         if (pos == std::wstring::npos) return L"";
@@ -594,13 +717,25 @@ void BrowserWindow::handleUIMessage(const std::wstring& json) {
         if (end == std::wstring::npos) return L"";
         return json.substr(pos + 1, end - pos - 1);
     };
+    // 解析 JSON 布尔值：{"key":true} / {"key":false}
+    auto findBool = [&json](const std::wstring& key) -> bool {
+        auto pos = json.find(L"\"" + key + L"\"");
+        if (pos == std::wstring::npos) return false;
+        pos = json.find(L":", pos);
+        if (pos == std::wstring::npos) return false;
+        pos++;
+        while (pos < json.size() &&
+               (json[pos] == L' ' || json[pos] == L'\t')) pos++;
+        return json.substr(pos, 4) == L"true";
+    };
     auto findInt = [&json](const std::wstring& key) -> int64_t {
         auto pos = json.find(L"\"" + key + L"\"");
         if (pos == std::wstring::npos) return 0;
         pos = json.find(L":", pos);
         if (pos == std::wstring::npos) return 0;
         pos++;
-        while (pos < json.size() && (json[pos] == L' ' || json[pos] == L'\t')) pos++;
+        while (pos < json.size() &&
+               (json[pos] == L' ' || json[pos] == L'\t')) pos++;
         size_t end = pos;
         while (end < json.size() &&
                (json[end] == L'-' || (json[end] >= L'0' && json[end] <= L'9'))) end++;
@@ -613,62 +748,36 @@ void BrowserWindow::handleUIMessage(const std::wstring& json) {
     };
 
     std::wstring type = findType(L"type");
-    if (type.empty()) {
-        std::cout << "[C++] type 为空, 忽略\n";
-        return;
-    }
-    std::wcout << L"[C++] type = " << type << L"\n";
+    if (type.empty()) return;
 
     if (type == L"newTab") {
-        std::cout << "[C++] 执行 createTab\n";
         createTab(L"");
-        std::cout << "[C++] createTab 返回, tabs_.count()=" << tabs_.count() << "\n";
     } else if (type == L"closeTab") {
-        int64_t id = findInt(L"id");
-        std::cout << "[C++] closeTab id=" << id << "\n";
-        closeTab(id);
+        closeTab(findInt(L"id"));
     } else if (type == L"activateTab") {
-        int64_t id = findInt(L"id");
-        std::cout << "[C++] activateTab id=" << id << "\n";
-        activateTab(id);
+        activateTab(findInt(L"id"));
     } else if (type == L"navigate") {
-        std::wstring url = findType(L"url");
-        std::wcout << L"[C++] navigate url=" << url << L"\n";
-        auto t = tabs_.active();
-        std::cout << "[C++] active tab=" << (t ? t->id : -1)
-                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
-        navigateActive(url);
+        navigateActive(findType(L"url"));
     } else if (type == L"back") {
         auto t = tabs_.active();
-        std::cout << "[C++] back, active=" << (t ? t->id : -1)
-                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
         if (t && t->webview) t->webview->GoBack();
     } else if (type == L"forward") {
         auto t = tabs_.active();
-        std::cout << "[C++] forward, active=" << (t ? t->id : -1)
-                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
         if (t && t->webview) t->webview->GoForward();
     } else if (type == L"reload") {
         auto t = tabs_.active();
-        std::cout << "[C++] reload, active=" << (t ? t->id : -1)
-                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
         if (t && t->webview) t->webview->Reload();
     } else if (type == L"home") {
-        std::cout << "[C++] home\n";
         navigateActive(L"dm://start");
     } else if (type == L"star") {
         auto t = tabs_.active();
-        std::cout << "[C++] star, active=" << (t ? t->id : -1) << "\n";
         if (t && bookmarkStore_) {
             std::string title = wideToUtf8(t->title);
             if (title.empty()) title = wideToUtf8(t->url);
             auto r = bookmarkStore_->add(title, wideToUtf8(t->url));
             if (r.isOk()) {
-                std::cout << "[C++] 收藏成功\n";
                 syncStarStateToUI(true);
                 sendBookmarksToContent();
-            } else {
-                std::cout << "[C++] 收藏失败\n";
             }
         }
     } else if (type == L"tabContextMenu") {
@@ -677,29 +786,221 @@ void BrowserWindow::handleUIMessage(const std::wstring& json) {
         auto t = tabs_.active();
         if (t && t->webview) t->webview->Reload();
     } else if (type == L"uiReady") {
-        std::cout << "[C++] uiReady, 启动定时器\n";
         SetTimer(hwnd_, 1, 50, nullptr);
-    } else {
-        std::wcout << L"[C++] 未知 type: " << type << L"\n";
+    } else if (type == L"toggleSidebar") {
+        onToggleSidebar(findBool(L"open"));
+    } else if (type == L"setUIMode") {
+        std::wstring mode = findType(L"mode");
+        if (settings_) {
+            settings_->set("ui_mode", wideToUtf8(mode));
+        }
+    } else if (type == L"checkOllama") {
+        onCheckOllama();
+    } else if (type == L"cmdPalette") {
+        bool open = findBool(L"open");
+        if (uiController_) {
+            if (open) {
+                RECT b{0, 0, width_, height_};
+                uiController_->put_Bounds(b);
+                for (auto& t : tabs_.allMutable()) {
+                    if (t->controller) t->controller->put_IsVisible(FALSE);
+                }
+            } else {
+                applyLayout();
+                InvalidateRect(hwnd_, nullptr, TRUE);
+                UpdateWindow(hwnd_);
+            }
+        }
     }
 }
 
-void BrowserWindow::layout() {
+// ============================================================
+// 侧边栏消息处理
+// ============================================================
+void BrowserWindow::handleSidebarMessage(const std::wstring& json) {
+    auto findType = [&json](const std::wstring& key) -> std::wstring {
+        auto pos = json.find(L"\"" + key + L"\"");
+        if (pos == std::wstring::npos) return L"";
+        pos = json.find(L":", pos);
+        if (pos == std::wstring::npos) return L"";
+        pos = json.find(L"\"", pos);
+        if (pos == std::wstring::npos) return L"";
+        auto end = json.find(L"\"", pos + 1);
+        if (end == std::wstring::npos) return L"";
+        return json.substr(pos + 1, end - pos - 1);
+    };
+
+    std::wstring type = findType(L"type");
+    if (type.empty()) return;
+
+    if (type == L"aiChat") onAiChat(json);
+    else if (type == L"checkOllama") onCheckOllama();
+    else if (type == L"loadAudit") onLoadAudit();
+    else if (type == L"loadHistory") onLoadHistory();
+    else if (type == L"toggleSidebar") onToggleSidebar(false);
+    else if (type == L"navigate") {
+        std::wstring url = findType(L"url");
+        if (!url.empty()) navigateActive(url);
+    }
+}
+
+void BrowserWindow::onToggleSidebar(bool open) {
+    sidebarOpen_ = open;
+    applyLayout();
+
+    if (uiWebView_) {
+        std::wostringstream json;
+        json << L"{\"type\":\"sidebarState\",\"open\":"
+             << (open ? L"true" : L"false") << L"}";
+        uiWebView_->PostWebMessageAsString(json.str().c_str());
+    }
+}
+
+// ============================================================
+// AI 对话
+// ============================================================
+void BrowserWindow::onAiChat(const std::wstring& json) {
+    auto findStr = [&json](const std::wstring& key) -> std::wstring {
+        auto pos = json.find(L"\"" + key + L"\"");
+        if (pos == std::wstring::npos) return L"";
+        pos = json.find(L":", pos);
+        if (pos == std::wstring::npos) return L"";
+        pos = json.find(L"\"", pos);
+        if (pos == std::wstring::npos) return L"";
+        auto end = pos + 1;
+        while (end < json.size()) {
+            if (json[end] == L'"' && json[end-1] != L'\\') break;
+            end++;
+        }
+        return json.substr(pos + 1, end - pos - 1);
+    };
+
+    std::wstring requestId = findStr(L"requestId");
+    std::wstring endpoint  = findStr(L"endpoint");
+    std::wstring model     = findStr(L"model");
+    std::wstring message   = findStr(L"message");
+
+    std::string ep  = wideToUtf8(endpoint);
+    std::string md  = wideToUtf8(model);
+    std::string msg = wideToUtf8(message);
+
+    auto self = this;
+    std::thread([self, requestId, ep, md, msg]() {
+        AiConfig cfg;
+        cfg.endpoint = ep;
+        cfg.model    = md;
+        self->aiClient_.setConfig(cfg);
+
+        std::string full;
+
+        self->aiClient_.chatStream({}, msg,
+            [self, requestId, &full](const std::string& chunk) {
+                full += chunk;
+                std::wstring wc = utf8ToWide(chunk);
+                auto* pair = new std::pair<std::wstring, std::wstring>(requestId, wc);
+                if (!PostMessageW(self->hwnd_, WM_AI_CHUNK, 0, (LPARAM)pair)) {
+                    delete pair;
+                }
+            },
+            [self, requestId](const std::string& err) {
+                std::wstring we = utf8ToWide(err);
+                auto* pair = new std::pair<std::wstring, std::wstring>(requestId, we);
+                if (!PostMessageW(self->hwnd_, WM_AI_ERROR, 0, (LPARAM)pair)) {
+                    delete pair;
+                }
+            });
+
+        std::wstring wfull = utf8ToWide(full);
+        auto* pair = new std::pair<std::wstring, std::wstring>(requestId, wfull);
+        if (!PostMessageW(self->hwnd_, WM_AI_DONE, 0, (LPARAM)pair)) {
+            delete pair;
+        }
+    }).detach();
+}
+
+// ============================================================
+// Ollama 检测（异步，避免阻塞 UI）
+// ============================================================
+void BrowserWindow::onCheckOllama() {
+    std::cout << "[C++] onCheckOllama 被调用\n";
+    // 立即发"检测中"状态
+    if (sidebarWebView_) {
+        sidebarWebView_->PostWebMessageAsString(
+            L"{\"type\":\"ollamaStatus\",\"ok\":false,\"status\":\"检测中...\"}");
+    }
+
+    auto self = this;
+    std::thread([self]() {
+        auto models = self->aiClient_.listModels();
+        auto* payload = new std::vector<std::string>(std::move(models));
+        if (!PostMessageW(self->hwnd_, WM_OLLAMA_RESULT, 0, (LPARAM)payload)) {
+            delete payload;
+        }
+    }).detach();
+}
+
+void BrowserWindow::onLoadAudit() {
+    std::wostringstream out;
+    out << L"{\"type\":\"auditList\",\"items\":[]}";
+    if (sidebarWebView_)
+        sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+}
+
+void BrowserWindow::onLoadHistory() {
+    if (!settings_) return;
+    auto items = settings_->recentHistory(50);
+    std::wostringstream out;
+    out << L"{\"type\":\"historyList\",\"items\":[";
+    bool first = true;
+    for (auto& it : items) {
+        if (!first) out << L",";
+        first = false;
+        std::wstring url   = utf8ToWide(it.url);
+        std::wstring title = utf8ToWide(it.title);
+        out << L"{\"url\":\"" << escapeJson(url)
+            << L"\",\"title\":\"" << escapeJson(title) << L"\"}";
+    }
+    out << L"]}";
+    if (sidebarWebView_)
+        sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+}
+
+// ============================================================
+// 布局
+// ============================================================
+void BrowserWindow::applyLayout() {
     if (uiController_) {
         RECT b{0, 0, width_, uiHeight_};
         uiController_->put_Bounds(b);
     }
-    RECT bounds{0, uiHeight_, width_, height_};
+    if (sidebarController_) {
+        if (sidebarOpen_) {
+            RECT b{width_ - sidebarWidth_, uiHeight_, width_, height_};
+            sidebarController_->put_Bounds(b);
+            sidebarController_->put_IsVisible(TRUE);
+        } else {
+            sidebarController_->put_IsVisible(FALSE);
+        }
+    }
+    RECT bounds{0, uiHeight_,
+                sidebarOpen_ ? width_ - sidebarWidth_ : width_,
+                height_};
     for (auto& t : tabs_.allMutable()) {
         if (t->controller) t->controller->put_Bounds(bounds);
     }
+
 }
+
+void BrowserWindow::layout() { applyLayout(); }
 
 std::wstring BrowserWindow::getActiveUrl() const {
     auto t = const_cast<BrowserWindow*>(this)->tabs_.active();
     return t ? t->url : L"";
 }
 
+// ============================================================
+// 窗口过程
+// ============================================================
 LRESULT CALLBACK BrowserWindow::WndProc(HWND hwnd, UINT msg,
                                          WPARAM wp, LPARAM lp) {
     BrowserWindow* self =
@@ -716,7 +1017,7 @@ LRESULT CALLBACK BrowserWindow::WndProc(HWND hwnd, UINT msg,
             if (self) {
                 self->width_ = LOWORD(lp);
                 self->height_ = HIWORD(lp);
-                self->layout();
+                self->applyLayout();
             }
             return 0;
         }
@@ -729,11 +1030,121 @@ LRESULT CALLBACK BrowserWindow::WndProc(HWND hwnd, UINT msg,
             }
             return 0;
         }
+        // ---- AI 消息封送（后台线程 → 主线程）----
+        case WM_AI_CHUNK: {
+            auto* pair = (std::pair<std::wstring, std::wstring>*)lp;
+            if (self && self->sidebarWebView_ && pair) {
+                std::wostringstream out;
+                out << L"{\"type\":\"aiChunk\",\"requestId\":\""
+                    << pair->first << L"\",\"content\":\""
+                    << escapeJson(pair->second) << L"\"}";
+                self->sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+            }
+            delete pair;
+            return 0;
+        }
+        case WM_AI_ERROR: {
+            auto* pair = (std::pair<std::wstring, std::wstring>*)lp;
+            if (self && self->sidebarWebView_ && pair) {
+                std::wostringstream out;
+                out << L"{\"type\":\"aiError\",\"requestId\":\""
+                    << pair->first << L"\",\"error\":\""
+                    << escapeJson(pair->second) << L"\"}";
+                self->sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+            }
+            delete pair;
+            return 0;
+        }
+        case WM_AI_DONE: {
+            auto* pair = (std::pair<std::wstring, std::wstring>*)lp;
+            if (self && self->sidebarWebView_ && pair) {
+                std::wostringstream out;
+                out << L"{\"type\":\"aiDone\",\"requestId\":\""
+                    << pair->first << L"\",\"full\":\""
+                    << escapeJson(pair->second) << L"\"}";
+                self->sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+            }
+            delete pair;
+            return 0;
+        }
+        // ---- Ollama 检测结果封送 ----
+        case WM_OLLAMA_RESULT: {
+            std::cout << "[C++] WM_OLLAMA_RESULT 收到\n";
+            auto* models = (std::vector<std::string>*)lp;
+            if (self && self->sidebarWebView_ && models) {
+                std::wostringstream out;
+                out << L"{\"type\":\"ollamaStatus\",\"ok\":"
+                    << (models->empty() ? L"false" : L"true")
+                    << L",\"status\":\""
+                    << (models->empty() ? L"未检测到 (请运行 ollama serve)" : L"就绪")
+                    << L"\"}";
+                self->sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+
+                std::wostringstream ml;
+                ml << L"{\"type\":\"modelList\",\"models\":[";
+                bool first = true;
+                for (auto& m : *models) {
+                    if (!first) ml << L",";
+                    first = false;
+                    ml << L"\"" << escapeJson(utf8ToWide(m)) << L"\"";
+                }
+                ml << L"]}";
+                self->sidebarWebView_->PostWebMessageAsString(ml.str().c_str());
+            }
+            delete models;
+            return 0;
+        }
+        case WM_KEYDOWN: {
+            if (!self) break;
+            bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            bool alt  = (GetKeyState(VK_MENU)    & 0x8000) != 0;
+            bool shift= (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+
+            if (ctrl && !shift && wp == 'T') {
+                self->createTab(L"");
+                return 0;
+            }
+            if (ctrl && !shift && wp == 'W') {
+                self->closeTab(self->tabs_.activeId());
+                return 0;
+            }
+            if (ctrl && !shift && wp == 'L') {
+                if (self->uiWebView_) {
+                    self->uiWebView_->PostWebMessageAsString(
+                        L"{\"type\":\"focusAddress\"}");
+                }
+                return 0;
+            }
+            if (ctrl && !shift && wp == 'R') {
+                auto t = self->tabs_.active();
+                if (t && t->webview) t->webview->Reload();
+                return 0;
+            }
+            if (wp == VK_F5) {
+                auto t = self->tabs_.active();
+                if (t && t->webview) t->webview->Reload();
+                return 0;
+            }
+            if (alt && wp == VK_LEFT) {
+                auto t = self->tabs_.active();
+                if (t && t->webview) t->webview->GoBack();
+                return 0;
+            }
+            if (alt && wp == VK_RIGHT) {
+                auto t = self->tabs_.active();
+                if (t && t->webview) t->webview->GoForward();
+                return 0;
+            }
+            if (wp == VK_F12) {
+                auto t = self->tabs_.active();
+                if (t && t->webview) t->webview->OpenDevToolsWindow();
+                return 0;
+            }
+            break;
+        }
         case WM_CLOSE:
-            std::cout << "[UI] WM_CLOSE 收到\n";
-            break;   // 继续走 DefWindowProc，触发 WM_DESTROY
+            break;
         case WM_DESTROY:
-            std::cout << "[UI] WM_DESTROY 收到, 窗口将被销毁\n";
             PostQuitMessage(0);
             return 0;
     }
@@ -746,8 +1157,6 @@ int BrowserWindow::run() {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
-    std::cout << "[UI] 消息循环退出, msg=" << msg.message
-              << ", wParam=" << msg.wParam << "\n";
     return (int)msg.wParam;
 }
 
