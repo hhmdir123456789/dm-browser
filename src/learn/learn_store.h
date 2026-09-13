@@ -67,6 +67,10 @@ public:
     std::vector<FeatureStat> listFeaturesByPriority();
     void recalcPriorities();
 
+    // ---------- 快照 JSON 存取（批 4B-2） ----------
+    bool saveSnapshot(const std::string& url, const std::string& snapshotJson);
+    std::string loadSnapshot(const std::string& url);
+
     // ---------- 统计 ----------
     int sampleCount();
     int diffCount();

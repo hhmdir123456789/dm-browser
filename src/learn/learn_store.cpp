@@ -11,7 +11,8 @@ bool LearnStore::init() {
         "url TEXT UNIQUE, title TEXT, html TEXT, css TEXT,"
         "html_size INTEGER, captured_at INTEGER,"
         "ref_screenshot TEXT, dm_screenshot TEXT,"
-        "diff_score REAL DEFAULT 0, status TEXT DEFAULT 'pending')",
+        "diff_score REAL DEFAULT 0, status TEXT DEFAULT 'pending',"
+        "snapshot_json TEXT)",
 
         "CREATE TABLE IF NOT EXISTS diff_record ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -38,6 +39,9 @@ bool LearnStore::init() {
         auto r = db_.exec(s);
         if (!r.isOk()) return false;
     }
+    // 兼容旧库：如果 site_sample 没有 snapshot_json 列，补一个
+    // （列已存在时会返回错误，忽略即可）
+    db_.exec("ALTER TABLE site_sample ADD COLUMN snapshot_json TEXT");
     return true;
 }
 
@@ -268,6 +272,37 @@ void LearnStore::recalcPriorities() {
         "failed_count * 10 + "
         "CAST((tested_count - passed_count) * 100.0 / "
         "MAX(tested_count, 1) AS INTEGER)");
+}
+
+// ============================================================
+// 快照 JSON 存取（批 4B-2）
+// ============================================================
+
+bool LearnStore::saveSnapshot(const std::string& url,
+                              const std::string& snapshotJson) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto rows = db_.query("SELECT id FROM site_sample WHERE url = ?", {url});
+    if (rows.empty()) {
+        auto r = db_.exec(
+            "INSERT INTO site_sample "
+            "(url, title, snapshot_json, html_size, captured_at) "
+            "VALUES (?, ?, ?, 0, ?)",
+            {url, url, snapshotJson, std::to_string(nowMs())});
+        return r.isOk();
+    } else {
+        auto r = db_.exec(
+            "UPDATE site_sample SET snapshot_json = ? WHERE url = ?",
+            {snapshotJson, url});
+        return r.isOk();
+    }
+}
+
+std::string LearnStore::loadSnapshot(const std::string& url) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto rows = db_.query(
+        "SELECT snapshot_json FROM site_sample WHERE url = ?", {url});
+    if (rows.empty() || rows[0].empty()) return "";
+    return rows[0][0];
 }
 
 // ============================================================

@@ -219,6 +219,17 @@
     padding:1px 6px; border-radius:8px;
   }
   .feat-item .priority.zero { background:#95a5a6; }
+
+  /* 保存参考成功提示 */
+  .saved-tip {
+    background:#eaf7ee; border:1px solid #b7e1c4;
+    color:#2e8b57; padding:14px; border-radius:6px;
+    text-align:center; font-size:12px;
+  }
+  .saved-tip .icon { font-size:22px; display:block; margin-bottom:6px; }
+  .saved-tip .hint {
+    font-size:11px; color:#7aab89; margin-top:8px; display:block;
+  }
 </style>
 </head>
 <body>
@@ -256,8 +267,8 @@
       </div>
       <div id="analyzeResult">
         <div class="empty">
-          点「分析本页」采集当前页面快照并对比
-          <span class="hint">对比参考：内置 demo 快照</span>
+          点「分析本页」采集当前页面快照
+          <span class="hint">首次会保存为参考，再次分析则对比差异</span>
         </div>
       </div>
     </div>
@@ -577,6 +588,16 @@
       }
       if (msg.type === 'featuresList') {
         renderFeatures(msg);
+      }
+      if (msg.type === 'analyzeSaved') {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = '分析本页';
+        analyzeResult.innerHTML =
+          '<div class="saved-tip">' +
+            '<span class="icon">✓</span>' +
+            '已保存为参考（' + msg.nodes + ' 节点）' +
+            '<span class="hint">下次点「分析本页」将与此快照对比</span>' +
+          '</div>';
       }
       if (msg.type === 'analyzeError') {
         analyzeBtn.disabled = false;

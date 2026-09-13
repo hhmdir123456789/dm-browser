@@ -139,8 +139,8 @@ static std::string unquoteJsonString(const std::wstring& w) {
     return out;
 }
 
-// 内置参考快照（跟 dm_learn dump 一致）
-static dm::learn::PageSnapshot makeDemoRefSnapshot() {
+// 内置参考快照（4B-2 后已不用，保留以免误删）
+[[maybe_unused]] static dm::learn::PageSnapshot makeDemoRefSnapshot() {
     using namespace dm::learn;
     PageSnapshot s;
     s.url = "https://demo.local/";
@@ -1156,7 +1156,7 @@ void BrowserWindow::onLoadHistory() {
 }
 
 // ============================================================
-// 批 4A：学习库分析
+// 批 4A / 4B-2：学习库分析
 // ============================================================
 void BrowserWindow::onAnalyzePage() {
     auto t = tabs_.active();
@@ -1171,10 +1171,12 @@ void BrowserWindow::onAnalyzePage() {
     }
 
     auto self = this;
+    std::string pageUrlUtf8 = wideToUtf8(t->url);
+
     t->webview->ExecuteScript(
         kCollectSnapshotScript,
         Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
-            [self](HRESULT hr, LPCWSTR resultJson) -> HRESULT {
+            [self, pageUrlUtf8](HRESULT hr, LPCWSTR resultJson) -> HRESULT {
                 if (FAILED(hr) || !resultJson) {
                     self->sendAnalyzeError("脚本执行失败");
                     return S_OK;
@@ -1192,7 +1194,35 @@ void BrowserWindow::onAnalyzePage() {
                     return S_OK;
                 }
 
-                auto ref = makeDemoRefSnapshot();
+                // ===== 批 4B-2：从数据库读参考 =====
+                std::string refJson;
+                if (self->learnStore_) {
+                    refJson = self->learnStore_->loadSnapshot(pageUrlUtf8);
+                }
+
+                // 首次访问：自动保存为参考，提示用户
+                if (refJson.empty()) {
+                    if (self->learnStore_) {
+                        self->learnStore_->saveSnapshot(pageUrlUtf8, json);
+                    }
+                    if (self->sidebarWebView_) {
+                        std::wostringstream out;
+                        out << L"{\"type\":\"analyzeSaved\",\"url\":\""
+                            << escapeJson(utf8ToWide(pageUrlUtf8))
+                            << L"\",\"nodes\":" << dm.nodes.size() << L"}";
+                        self->sidebarWebView_->PostWebMessageAsString(
+                            out.str().c_str());
+                    }
+                    return S_OK;
+                }
+
+                // 有参考：正常对比
+                auto ref = dm::learn::parseSnapshotJson(refJson);
+                if (ref.nodes.empty()) {
+                    self->sendAnalyzeError("参考快照解析失败");
+                    return S_OK;
+                }
+
                 auto result = dm::learn::MultiCompare::compare(ref, dm);
 
                 std::set<std::string> feats;
