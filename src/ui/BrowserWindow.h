@@ -79,6 +79,7 @@ private:
     void sendAnalyzeResult(const dm::learn::MultiDimResult& result,
                            const std::vector<std::string>& inferred);
     void sendAnalyzeError(const std::string& error);
+    void onHighlightDiff(const std::wstring& path);
 
     HWND hwnd_{nullptr};
 

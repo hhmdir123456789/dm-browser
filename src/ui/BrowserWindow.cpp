@@ -269,6 +269,51 @@ static const wchar_t* kCollectSnapshotScript = LR"JSS(
 })();
 )JSS";
 
+// 高亮脚本模板（%s 处填 JSON 字符串化的 path）
+static const wchar_t* kHighlightScriptFmt = LR"JSS(
+(function(path){
+  document.querySelectorAll('[data-dm-hl]').forEach(function(el){
+    el.style.outline = '';
+    el.style.outlineOffset = '';
+    el.style.backgroundColor = '';
+    el.removeAttribute('data-dm-hl');
+  });
+  if (!path) return 'cleared';
+  var parts = path.split('>').filter(function(s){ return s.trim(); });
+  var cur = null;
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i].trim();
+    var m = part.match(/^([a-z0-9]+)(?:\.(\d+))?$/i);
+    if (!m) return 'bad_part:' + part;
+    var tag = m[1].toLowerCase();
+    var idx = m[2] !== undefined ? parseInt(m[2], 10) : 0;
+    if (i === 0) {
+      if (tag === 'html') cur = document.documentElement;
+      else if (tag === 'body') cur = document.body;
+      else return 'bad_root:' + tag;
+      continue;
+    }
+    var found = null, count = 0;
+    for (var j = 0; j < cur.children.length; j++) {
+      var ch = cur.children[j];
+      if (ch.tagName.toLowerCase() === tag) {
+        if (count === idx) { found = ch; break; }
+        count++;
+      }
+    }
+    if (!found) return 'not_found@' + i;
+    cur = found;
+  }
+  if (!cur) return 'no_element';
+  cur.setAttribute('data-dm-hl', '1');
+  cur.style.outline = '3px solid #e74c3c';
+  cur.style.outlineOffset = '2px';
+  cur.style.backgroundColor = 'rgba(231,76,60,0.12)';
+  try { cur.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e) {}
+  return 'ok';
+})(%s);
+)JSS";
+
 // ============================================================
 // 构造 / 析构
 // ============================================================
@@ -1028,6 +1073,7 @@ void BrowserWindow::handleSidebarMessage(const std::wstring& json) {
     else if (type == L"loadHistory") onLoadHistory();
     else if (type == L"analyzePage") onAnalyzePage();
     else if (type == L"loadFeatures") onLoadFeatures();
+    else if (type == L"highlightDiff") onHighlightDiff(findType(L"path"));
     else if (type == L"toggleSidebar") onToggleSidebar(false);
     else if (type == L"navigate") {
         std::wstring url = findType(L"url");
@@ -1194,13 +1240,11 @@ void BrowserWindow::onAnalyzePage() {
                     return S_OK;
                 }
 
-                // ===== 批 4B-2：从数据库读参考 =====
                 std::string refJson;
                 if (self->learnStore_) {
                     refJson = self->learnStore_->loadSnapshot(pageUrlUtf8);
                 }
 
-                // 首次访问：自动保存为参考，提示用户
                 if (refJson.empty()) {
                     if (self->learnStore_) {
                         self->learnStore_->saveSnapshot(pageUrlUtf8, json);
@@ -1216,7 +1260,6 @@ void BrowserWindow::onAnalyzePage() {
                     return S_OK;
                 }
 
-                // 有参考：正常对比
                 auto ref = dm::learn::parseSnapshotJson(refJson);
                 if (ref.nodes.empty()) {
                     self->sendAnalyzeError("参考快照解析失败");
@@ -1339,6 +1382,29 @@ void BrowserWindow::sendAnalyzeError(const std::string& error) {
     out << L"{\"type\":\"analyzeError\",\"error\":\""
         << escapeJson(utf8ToWide(error)) << L"\"}";
     sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+}
+
+// ============================================================
+// 批 4B-3：差异高亮
+// ============================================================
+void BrowserWindow::onHighlightDiff(const std::wstring& path) {
+    auto t = tabs_.active();
+    if (!t || !t->webview) return;
+    if (path.empty()) return;
+
+    // path 里只会有 [a-z0-9.>]，做保守转义后包成 JSON 字符串
+    std::wstring pathJson = L"\"";
+    for (wchar_t c : path) {
+        if (c == L'"' || c == L'\\') pathJson += L'\\';
+        pathJson += c;
+    }
+    pathJson += L"\"";
+
+    wchar_t script[16384];
+    int n = swprintf_s(script, kHighlightScriptFmt, pathJson.c_str());
+    if (n < 0) return;
+
+    t->webview->ExecuteScript(script, nullptr);
 }
 
 // ============================================================

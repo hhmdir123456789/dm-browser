@@ -175,6 +175,10 @@
     background:#fff; border:1px solid #e0e4ea;
     border-radius:6px; padding:8px 10px; margin-bottom:6px;
     border-left:3px solid #f39c12;
+    cursor:pointer; transition: box-shadow 0.15s ease;
+  }
+  .diff-item:hover {
+    box-shadow: 0 0 0 2px rgba(74,144,226,0.25);
   }
   .diff-item.sev-high   { border-left-color:#e74c3c; }
   .diff-item.sev-mid    { border-left-color:#f39c12; }
@@ -407,6 +411,14 @@
     send({ type: 'loadFeatures' });
   };
 
+  // ===== 批 4B-3：点差异条目高亮对应 DOM 节点 =====
+  analyzeResult.addEventListener('click', (e) => {
+    const item = e.target.closest('.diff-item');
+    if (!item) return;
+    const path = item.getAttribute('data-path');
+    if (path) send({ type: 'highlightDiff', path: path });
+  });
+
   function scoreClass(v) {
     if (v >= 0.9) return 'good';
     if (v >= 0.6) return 'warn';
@@ -454,7 +466,7 @@
       for (const d of sorted.slice(0, 30)) {
         const sev = d.severity >= 5 ? 'sev-high'
                   : d.severity >= 3 ? 'sev-mid' : 'sev-low';
-        html += '<div class="diff-item ' + sev + '">' +
+        html += '<div class="diff-item ' + sev + '" data-path="' + esc(d.path) + '">' +
           '<div class="head">' +
             '<span class="dim">' + esc(d.dimension) + ' / ' + esc(d.category) + '</span>' +
             '<span class="sev">' + d.severity + '</span>' +
