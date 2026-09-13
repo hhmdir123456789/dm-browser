@@ -127,7 +127,6 @@ void BrowserWindow::onEnvReady() {
                 ctrl->put_Bounds(uiBounds);
                 ctrl->put_IsVisible(TRUE);
 
-                // 注册消息接收
                 HRESULT hr = uiWebView_->add_WebMessageReceived(
                     Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                         [this](ICoreWebView2*,
@@ -154,8 +153,7 @@ void BrowserWindow::onEnvReady() {
                         }).Get(), nullptr);
 
                 if (FAILED(hr)) {
-                    std::cerr << "[UI] add_WebMessageReceived 失败: "
-                              << std::hex << hr << "\n";
+                    std::cerr << "[UI] add_WebMessageReceived 失败\n";
                 } else {
                     std::cout << "[UI] WebMessageReceived 注册成功\n";
                 }
@@ -229,9 +227,12 @@ std::wstring BrowserWindow::loadStartPage() {
 }
 
 void BrowserWindow::createTab(const std::wstring& url) {
+    std::cout << "[C++] createTab 开始, url=" << wideToUtf8(url) << "\n";
+
     {
         std::lock_guard lock(createMutex_);
         if (!envReady_) {
+            std::cout << "[C++] env 未就绪，挂起\n";
             std::lock_guard plock(pendingMutex_);
             pendingUrls_.push_back(url);
             return;
@@ -240,16 +241,22 @@ void BrowserWindow::createTab(const std::wstring& url) {
 
     int64_t id = tabs_.create();
     tabs_.activate(id);
+    std::cout << "[C++] 新建标签 id=" << id
+              << ", 当前标签数=" << tabs_.count() << "\n";
     syncTabsToUI();
 
     std::wstring target = url;
     bool useStartPage = (url.empty() || url == L"about:blank");
 
+    std::cout << "[C++] 准备创建 WebView2 controller\n";
     env_->CreateCoreWebView2Controller(hwnd_,
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
             [this, id, target, useStartPage](HRESULT result,
                     ICoreWebView2Controller* ctrl) -> HRESULT {
+                std::cout << "[C++] controller 回调 hr="
+                          << std::hex << result << std::dec << "\n";
                 if (FAILED(result) || !ctrl) {
+                    std::cout << "[C++] controller 创建失败，关闭标签\n";
                     tabs_.close(id);
                     syncTabsToUI();
                     return S_OK;
@@ -288,6 +295,7 @@ void BrowserWindow::createTab(const std::wstring& url) {
                     syncAddressToUI(target);
                 }
 
+                std::cout << "[C++] 标签 " << id << " 初始化完成\n";
                 syncTabsToUI();
                 layout();
                 return S_OK;
@@ -295,6 +303,7 @@ void BrowserWindow::createTab(const std::wstring& url) {
 }
 
 void BrowserWindow::closeTab(int64_t id) {
+    std::cout << "[C++] closeTab id=" << id << "\n";
     auto t = tabs_.get(id);
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> ctrl;
     if (t) ctrl = t->controller;
@@ -312,7 +321,11 @@ void BrowserWindow::closeTab(int64_t id) {
 }
 
 void BrowserWindow::activateTab(int64_t id) {
-    if (!tabs_.activate(id)) return;
+    std::cout << "[C++] activateTab id=" << id << "\n";
+    if (!tabs_.activate(id)) {
+        std::cout << "[C++] 激活失败，标签不存在\n";
+        return;
+    }
 
     for (auto& t : tabs_.allMutable()) {
         if (t->controller) {
@@ -333,8 +346,12 @@ void BrowserWindow::activateTab(int64_t id) {
 }
 
 void BrowserWindow::navigateActive(const std::wstring& url) {
+    std::cout << "[C++] navigateActive url=" << wideToUtf8(url) << "\n";
     auto t = tabs_.active();
-    if (!t || !t->webview) return;
+    if (!t || !t->webview) {
+        std::cout << "[C++] 没有激活标签或 webview\n";
+        return;
+    }
 
     std::wstring finalUrl = url;
     if (finalUrl.empty()) return;
@@ -359,6 +376,7 @@ void BrowserWindow::navigateActive(const std::wstring& url) {
 
     t->url = finalUrl;
     std::wstring enc = urlEncode(finalUrl);
+    std::cout << "[C++] Navigate 到 " << wideToUtf8(enc) << "\n";
     t->webview->Navigate(enc.c_str());
     syncAddressToUI(finalUrl);
     updateLockIcon(finalUrl);
@@ -411,12 +429,10 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
 }
 
 void BrowserWindow::syncTabsToUI() {
-    if (!uiWebView_) return;
-
-    ULONGLONG now = GetTickCount64();
-    ULONGLONG last = lastSyncMs_.load();
-    if (last != 0 && now - last < 50) return;
-    lastSyncMs_.store(now);
+    if (!uiWebView_) {
+        std::cout << "[C++] syncTabsToUI: uiWebView_ 为空\n";
+        return;
+    }
 
     std::lock_guard lock(syncMutex_);
 
@@ -436,6 +452,7 @@ void BrowserWindow::syncTabsToUI() {
     }
     json << L"]}";
 
+    std::cout << "[C++] syncTabsToUI -> " << wideToUtf8(json.str()) << "\n";
     uiWebView_->PostWebMessageAsString(json.str().c_str());
 }
 
@@ -496,6 +513,7 @@ void BrowserWindow::handleUIMessage(const std::wstring& json) {
     std::cout << "[C++] type = " << wideToUtf8(type) << "\n";
 
     if (type == L"newTab") {
+        std::cout << "[C++] 执行 createTab\n";
         createTab(L"");
     } else if (type == L"closeTab") {
         closeTab(findInt(L"id"));

@@ -66,7 +66,6 @@ private:
     std::mutex syncMutex_;
     std::mutex pendingMutex_;
     std::mutex fileMutex_;
-    std::atomic<ULONGLONG> lastSyncMs_{0};
 
     std::wstring cachedUIHtml_;
     std::wstring cachedStartPage_;
