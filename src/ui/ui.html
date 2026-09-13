@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -13,7 +14,6 @@
     background: #dce1e6;
   }
 
-  /* ========== 标签栏 ========== */
   .tabbar {
     display: flex;
     align-items: center;
@@ -22,6 +22,16 @@
     background: #dce1e6;
     gap: 4px;
   }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
   .tab {
     display: flex;
     align-items: center;
@@ -33,10 +43,10 @@
     color: #333;
     cursor: pointer;
     transition: background 0.15s;
+    flex: 0 1 220px;
+    min-width: 100px;
     max-width: 220px;
-    min-width: 120px;
     position: relative;
-    flex-shrink: 0;
   }
   .tab:hover { background: rgba(255,255,255,0.5); }
   .tab.active {
@@ -48,13 +58,14 @@
     width: 16px;
     height: 16px;
     flex-shrink: 0;
-    border-radius: 2px;
-    background: #888;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4a90e2, #7b2ff7);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 10px;
     color: #fff;
+    font-weight: bold;
   }
   .tab .title {
     flex: 1;
@@ -63,8 +74,8 @@
     white-space: nowrap;
   }
   .tab .close {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 4px;
     display: none;
     align-items: center;
@@ -89,10 +100,10 @@
     color: #555;
     cursor: pointer;
     flex-shrink: 0;
+    margin-left: 4px;
   }
   .new-tab:hover { background: rgba(255,255,255,0.5); }
 
-  /* ========== 工具栏 ========== */
   .toolbar {
     display: flex;
     align-items: center;
@@ -117,7 +128,6 @@
   .btn:disabled { color: #bbb; cursor: default; }
   .btn:disabled:hover { background: transparent; }
 
-  /* ========== 地址栏 ========== */
   .addr-wrap {
     flex: 1;
     display: flex;
@@ -157,10 +167,11 @@
 </style>
 </head>
 <body>
-  <!-- 标签栏 -->
-  <div class="tabbar" id="tabbar"></div>
+  <div class="tabbar" id="tabbar">
+    <div class="tabs" id="tabs"></div>
+    <div class="new-tab" id="newTab">+</div>
+  </div>
 
-  <!-- 工具栏 -->
   <div class="toolbar">
     <div class="btn" id="btnBack" title="后退">←</div>
     <div class="btn" id="btnForward" title="前进">→</div>
@@ -168,7 +179,7 @@
     <div class="btn" id="btnHome" title="主页">⌂</div>
 
     <div class="addr-wrap">
-      <span class="lock" id="lockIcon">🔒</span>
+      <span class="lock" id="lockIcon">📄</span>
       <input id="addrInput" type="text" placeholder="搜索或输入网址" />
       <span class="icon-right" id="btnStar" title="收藏">☆</span>
       <span class="icon-right" title="更多">⋯</span>
@@ -178,74 +189,104 @@
   </div>
 
   <script>
-    // ========== 与 C++ 通信 ==========
+    let tabs = [];
+    let activeId = 0;
+    let userEditing = false;
+
     function send(msg) {
+      console.log('[UI] send: ' + JSON.stringify(msg));
       if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(msg);
+        window.chrome.webview.postMessage(JSON.stringify(msg));
       }
     }
 
-    // ========== 标签渲染 ==========
-    let tabs = [];
-    let activeId = 0;
-
     function renderTabs() {
-      const bar = document.getElementById('tabbar');
-      bar.innerHTML = '';
-
+      const container = document.getElementById('tabs');
+      if (!container) return;
+      container.innerHTML = '';
       for (const t of tabs) {
         const el = document.createElement('div');
         el.className = 'tab' + (t.id === activeId ? ' active' : '');
-        el.innerHTML = `
-          <div class="favicon">${(t.title || '?')[0]}</div>
-          <div class="title">${t.title || '新标签页'}</div>
-          <div class="close">×</div>
-        `;
+        el.title = t.url || '';
+
+        const fav = document.createElement('div');
+        fav.className = 'favicon';
+        fav.textContent = (t.title || '?')[0];
+        el.appendChild(fav);
+
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = t.title || '新标签页';
+        el.appendChild(title);
+
+        const close = document.createElement('div');
+        close.className = 'close';
+        close.textContent = '×';
+        el.appendChild(close);
+
         el.addEventListener('click', (e) => {
-          if (e.target.classList.contains('close')) {
+          if (e.target === close) {
             send({ type: 'closeTab', id: t.id });
           } else {
             send({ type: 'activateTab', id: t.id });
           }
         });
-        bar.appendChild(el);
+        container.appendChild(el);
       }
-
-      // 新建标签按钮
-      const nt = document.createElement('div');
-      nt.className = 'new-tab';
-      nt.textContent = '+';
-      nt.title = '新建标签页';
-      nt.addEventListener('click', () => send({ type: 'newTab' }));
-      bar.appendChild(nt);
     }
 
-    // ========== 地址栏 ==========
     const addrInput = document.getElementById('addrInput');
+    if (addrInput) {
+      addrInput.addEventListener('focus', () => {
+        userEditing = true;
+        addrInput.select();
+      });
+      addrInput.addEventListener('blur', () => {
+        userEditing = false;
+      });
+      addrInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          send({ type: 'navigate', url: addrInput.value.trim() });
+          addrInput.blur();
+        }
+        if (e.key === 'Escape') {
+          addrInput.blur();
+        }
+        if (e.key === 'a' && e.ctrlKey) {
+          addrInput.select();
+        }
+      });
+    }
 
-    addrInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        send({ type: 'navigate', url: addrInput.value.trim() });
-        addrInput.blur();
-      }
-      if (e.key === 'Escape') {
-        addrInput.blur();
-      }
-    });
+    const btnNewTab = document.getElementById('newTab');
+    if (btnNewTab) btnNewTab.onclick = () => send({ type: 'newTab' });
 
-    addrInput.addEventListener('focus', () => {
-      addrInput.select();
-    });
+    const btnBack = document.getElementById('btnBack');
+    if (btnBack) btnBack.onclick = () => send({ type: 'back' });
 
-    // ========== 工具栏按钮 ==========
-    document.getElementById('btnBack').onclick = () => send({ type: 'back' });
-    document.getElementById('btnForward').onclick = () => send({ type: 'forward' });
-    document.getElementById('btnReload').onclick = () => send({ type: 'reload' });
-    document.getElementById('btnHome').onclick = () => send({ type: 'home' });
-    document.getElementById('btnStar').onclick = () => send({ type: 'star' });
+    const btnForward = document.getElementById('btnForward');
+    if (btnForward) btnForward.onclick = () => send({ type: 'forward' });
 
-    // ========== 接收 C++ 消息 ==========
+    const btnReload = document.getElementById('btnReload');
+    if (btnReload) btnReload.onclick = () => send({ type: 'reload' });
+
+    const btnHome = document.getElementById('btnHome');
+    if (btnHome) btnHome.onclick = () => send({ type: 'home' });
+
+    const btnStar = document.getElementById('btnStar');
+    if (btnStar) btnStar.onclick = () => send({ type: 'star' });
+
+    const tabbarEl = document.getElementById('tabbar');
+    if (tabbarEl) {
+      tabbarEl.addEventListener('dblclick', (e) => {
+        if (e.target === tabbarEl ||
+            e.target.classList.contains('tabs')) {
+          send({ type: 'newTab' });
+        }
+      });
+    }
+
     if (window.chrome && window.chrome.webview) {
       window.chrome.webview.addEventListener('message', (e) => {
         const msg = e.data;
@@ -255,19 +296,26 @@
           renderTabs();
         }
         if (msg.type === 'updateAddress') {
-          if (document.activeElement !== addrInput) {
+          if (!userEditing && addrInput) {
             addrInput.value = msg.url || '';
           }
         }
         if (msg.type === 'updateNavState') {
-          document.getElementById('btnBack').style.opacity = msg.canBack ? 1 : 0.3;
-          document.getElementById('btnForward').style.opacity = msg.canForward ? 1 : 0.3;
+          const b = document.getElementById('btnBack');
+          const f = document.getElementById('btnForward');
+          if (b) b.disabled = !msg.canBack;
+          if (f) f.disabled = !msg.canForward;
+        }
+        if (msg.type === 'updateLock') {
+          const lock = document.getElementById('lockIcon');
+          if (lock) lock.textContent = msg.icon;
         }
       });
     }
 
-    // 初始化
-    renderTabs();
+    window.addEventListener('DOMContentLoaded', () => {
+      send({ type: 'uiReady' });
+    });
   </script>
 </body>
 </html>

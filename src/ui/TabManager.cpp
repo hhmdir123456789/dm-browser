@@ -1,45 +1,92 @@
 #include "ui/TabManager.h"
 #include <algorithm>
+#include <iterator>
 
 namespace dm::ui {
 
-int TabManager::create() {
-    Tab t;
-    t.id = nextId_++;
-    tabs_.push_back(t);
-    if (activeId_ == 0) activeId_ = t.id;
-    return t.id;
+void TabManager::fixActiveId() {
+    if (tabs_.empty()) {
+        activeId_ = 0;
+        return;
+    }
+    auto it = std::find_if(tabs_.begin(), tabs_.end(),
+        [this](const std::shared_ptr<Tab>& t) { return t->id == activeId_; });
+    if (it == tabs_.end()) {
+        activeId_ = tabs_.front()->id;
+    }
 }
 
-bool TabManager::close(int id) {
+int64_t TabManager::create() {
+    std::lock_guard lock(mu_);
+    auto t = std::make_shared<Tab>();
+    t->id = nextId_++;
+    tabs_.push_back(t);
+    if (activeId_ == 0) activeId_ = t->id;
+    return t->id;
+}
+
+bool TabManager::close(int64_t id) {
+    std::lock_guard lock(mu_);
     auto it = std::find_if(tabs_.begin(), tabs_.end(),
-        [id](const Tab& t) { return t.id == id; });
+        [id](const std::shared_ptr<Tab>& t) { return t->id == id; });
     if (it == tabs_.end()) return false;
 
-    bool wasActive = (it->id == activeId_);
+    bool wasActive = ((*it)->id == activeId_);
+    size_t idx = std::distance(tabs_.begin(), it);
     tabs_.erase(it);
 
     if (wasActive) {
-        activeId_ = tabs_.empty() ? 0 : tabs_.front().id;
+        if (tabs_.empty()) {
+            activeId_ = 0;
+        } else if (idx < tabs_.size()) {
+            activeId_ = tabs_[idx]->id;      // 右侧优先
+        } else {
+            activeId_ = tabs_.back()->id;    // 左侧兜底
+        }
     }
+    fixActiveId();
     return true;
 }
 
-bool TabManager::activate(int id) {
+bool TabManager::activate(int64_t id) {
+    std::lock_guard lock(mu_);
     auto it = std::find_if(tabs_.begin(), tabs_.end(),
-        [id](const Tab& t) { return t.id == id; });
+        [id](const std::shared_ptr<Tab>& t) { return t->id == id; });
     if (it == tabs_.end()) return false;
     activeId_ = id;
     return true;
 }
 
-Tab* TabManager::get(int id) {
-    for (auto& t : tabs_) if (t.id == id) return &t;
+std::shared_ptr<Tab> TabManager::get(int64_t id) {
+    std::lock_guard lock(mu_);
+    for (auto& t : tabs_) if (t->id == id) return t;
     return nullptr;
 }
 
-Tab* TabManager::active() {
-    return get(activeId_);
+std::shared_ptr<Tab> TabManager::active() {
+    std::lock_guard lock(mu_);
+    for (auto& t : tabs_) if (t->id == activeId_) return t;
+    return nullptr;
+}
+
+std::vector<std::shared_ptr<Tab>> TabManager::all() const {
+    std::lock_guard lock(mu_);
+    return tabs_;
+}
+
+std::vector<std::shared_ptr<Tab>> TabManager::allMutable() {
+    std::lock_guard lock(mu_);
+    return tabs_;
+}
+
+size_t TabManager::count() const {
+    std::lock_guard lock(mu_);
+    return tabs_.size();
+}
+
+int64_t TabManager::activeId() const {
+    std::lock_guard lock(mu_);
+    return activeId_;
 }
 
 } // namespace dm::ui

@@ -1,6 +1,9 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <memory>
+#include <mutex>
+#include <atomic>
 #include <windows.h>
 #include <wrl.h>
 #include <WebView2.h>
@@ -17,47 +20,56 @@ public:
     bool create(const std::wstring& title, int width, int height);
     int run();
 
+    std::wstring getActiveUrl() const;
+
 private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
     void initWebView2Env();
     void onEnvReady();
 
-    // 创建内容层 WebView2（每个标签一个）
     void createTab(const std::wstring& url = L"");
-    void closeTab(int id);
-    void activateTab(int id);
+    void closeTab(int64_t id);
+    void activateTab(int64_t id);
     void navigateActive(const std::wstring& url);
 
-    // 同步 UI 层
+    std::wstring loadUIHtml();
+    std::wstring loadStartPage();
+    std::wstring readFileAsWide(const std::string& path);
+
     void syncTabsToUI();
     void syncAddressToUI(const std::wstring& url);
     void syncNavStateToUI(bool canBack, bool canForward);
 
-    // 处理来自 UI 层的消息
     void handleUIMessage(const std::wstring& json);
-
-    std::wstring loadStartPage();
-    std::wstring loadUIHtml();
+    void onContentNavCompleted(int64_t tabId);
 
     void layout();
-    void onContentNavCompleted(int tabId);
+    void updateLockIcon(const std::wstring& url);
 
     HWND hwnd_{nullptr};
 
-    // 两层 WebView2
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> uiController_;
     Microsoft::WRL::ComPtr<ICoreWebView2> uiWebView_;
 
-    // 内容层：每个标签一个 controller
     TabManager tabs_;
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> env_;
     bool envReady_{false};
 
     int width_{1024}, height_{768};
-    int uiHeight_{88};   // UI 层高度 = 标签栏 40 + 工具栏 48
+    int uiHeight_{88};
 
-    std::vector<int> pendingTabs_;
+    std::vector<std::wstring> pendingUrls_;
+    std::vector<int64_t> pendingTabs_;
+
+    std::mutex createMutex_;
+    std::mutex syncMutex_;
+    std::mutex pendingMutex_;
+    std::mutex fileMutex_;
+    std::atomic<ULONGLONG> lastSyncMs_{0};
+
+    std::wstring cachedUIHtml_;
+    std::wstring cachedStartPage_;
 };
 
 } // namespace dm::ui

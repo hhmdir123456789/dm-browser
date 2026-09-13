@@ -1,35 +1,42 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <memory>
+#include <mutex>
+#include <cstdint>
 #include <wrl.h>
 #include <WebView2.h>
 
 namespace dm::ui {
 
 struct Tab {
-    int id{0};
+    int64_t id{0};
     std::wstring title{L"新标签页"};
-    std::wstring url{L"about:blank"};
+    std::wstring url{L""};
     bool loading{false};
+    bool navHandlerRegistered{false};
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;
     Microsoft::WRL::ComPtr<ICoreWebView2> webview;
 };
 
 class TabManager {
 public:
-    int create();                       // 新建标签，返回 id
-    bool close(int id);                 // 关闭标签
-    bool activate(int id);              // 激活标签
-    Tab* get(int id);                   // 获取标签
-    Tab* active();                      // 当前激活标签
-    const std::vector<Tab>& all() const { return tabs_; }
-    size_t count() const { return tabs_.size(); }
-    int activeId() const { return activeId_; }
+    int64_t create();
+    bool close(int64_t id);
+    bool activate(int64_t id);
+    std::shared_ptr<Tab> get(int64_t id);
+    std::shared_ptr<Tab> active();
+    std::vector<std::shared_ptr<Tab>> all() const;
+    std::vector<std::shared_ptr<Tab>> allMutable();
+    size_t count() const;
+    int64_t activeId() const;
 
 private:
-    std::vector<Tab> tabs_;
-    int nextId_{1};
-    int activeId_{0};
+    void fixActiveId();
+    mutable std::mutex mu_;
+    std::vector<std::shared_ptr<Tab>> tabs_;
+    int64_t nextId_{1};
+    int64_t activeId_{0};
 };
 
 } // namespace dm::ui
