@@ -68,6 +68,9 @@ if(WIN32)
         src/ui/TabManager.cpp
         src/ui/ui_main.cpp
         src/ui/AiClient.cpp
+        src/learn/learn_store.cpp
+        src/learn/snapshot_parser.cpp
+        src/learn/multi_compare.cpp
     )
     target_include_directories(dm_ui PRIVATE src "${WEBVIEW2_INCLUDE}")
     target_link_libraries(dm_ui PRIVATE
@@ -178,7 +181,6 @@ add_custom_command(TARGET dm_kb POST_BUILD
 add_executable(dm_learn
     src/learn/learn_main.cpp
     src/learn/learn_store.cpp
-    # 以下两个文件还没创建，暂时注释，等创建后取消注释
     src/learn/snapshot_parser.cpp
     src/learn/multi_compare.cpp
     src/db/Database.cpp

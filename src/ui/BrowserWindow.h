@@ -12,13 +12,14 @@
 #include "ui/TabManager.h"
 #include "ui/AiClient.h"
 #include "ui/SettingsStore.h"
+#include "learn/snapshot.h"
+#include "learn/multi_compare.h"
+#include "learn/learn_store.h"
 #include "db/Database.h"
 #include "Storage.h"
 
 namespace dm::ui {
 
-// 自定义消息：把后台线程的 AI 结果封送回主线程
-// WebView2 API 有线程亲和性，必须在创建它的线程（主线程）上调用
 #define WM_AI_CHUNK  (WM_APP + 1)
 #define WM_AI_ERROR  (WM_APP + 2)
 #define WM_AI_DONE   (WM_APP + 3)
@@ -72,13 +73,18 @@ private:
     void onLoadAudit();
     void onLoadHistory();
 
+    // 学习库分析（批 4A）
+    void onAnalyzePage();
+    void onLoadFeatures();
+    void sendAnalyzeResult(const dm::learn::MultiDimResult& result,
+                           const std::vector<std::string>& inferred);
+    void sendAnalyzeError(const std::string& error);
+
     HWND hwnd_{nullptr};
 
-    // UI 层
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> uiController_;
     Microsoft::WRL::ComPtr<ICoreWebView2> uiWebView_;
 
-    // 侧边栏层
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> sidebarController_;
     Microsoft::WRL::ComPtr<ICoreWebView2> sidebarWebView_;
     bool sidebarOpen_{false};
@@ -108,6 +114,7 @@ private:
     std::unique_ptr<BookmarkStore> bookmarkStore_;
     std::unique_ptr<SettingsStore> settings_;
     AiClient aiClient_;
+    std::unique_ptr<dm::learn::LearnStore> learnStore_;
 };
 
 } // namespace dm::ui

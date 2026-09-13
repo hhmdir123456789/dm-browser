@@ -7,6 +7,8 @@
 #include <thread>
 #include <vector>
 #include <utility>
+#include <set>
+#include "learn/snapshot_parser.h"
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ole32.lib")
@@ -83,6 +85,191 @@ static std::wstring urlEncode(const std::wstring& s) {
 }
 
 // ============================================================
+// 批 4A：学习库分析辅助
+// ============================================================
+
+// 把 ExecuteScript 返回的 JSON 字符串字面量解引号
+static std::string unquoteJsonString(const std::wstring& w) {
+    std::string s = wideToUtf8(w);
+    if (s.size() < 2 || s.front() != '"' || s.back() != '"') return s;
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 1; i + 1 < s.size(); ++i) {
+        char c = s[i];
+        if (c == '\\' && i + 2 < s.size()) {
+            char e = s[++i];
+            switch (e) {
+                case 'n': out += '\n'; break;
+                case 't': out += '\t'; break;
+                case 'r': out += '\r'; break;
+                case '"': out += '"';  break;
+                case '\\': out += '\\'; break;
+                case '/': out += '/';  break;
+                case 'b': out += '\b'; break;
+                case 'f': out += '\f'; break;
+                case 'u': {
+                    if (i + 4 < s.size()) {
+                        unsigned int cp = 0;
+                        for (int k = 0; k < 4; ++k) {
+                            char h = s[i + 1 + k];
+                            cp <<= 4;
+                            if (h >= '0' && h <= '9') cp |= (h - '0');
+                            else if (h >= 'a' && h <= 'f') cp |= (h - 'a' + 10);
+                            else if (h >= 'A' && h <= 'F') cp |= (h - 'A' + 10);
+                        }
+                        i += 4;
+                        if (cp < 0x80) out += (char)cp;
+                        else if (cp < 0x800) {
+                            out += (char)(0xC0 | (cp >> 6));
+                            out += (char)(0x80 | (cp & 0x3F));
+                        } else {
+                            out += (char)(0xE0 | (cp >> 12));
+                            out += (char)(0x80 | ((cp >> 6) & 0x3F));
+                            out += (char)(0x80 | (cp & 0x3F));
+                        }
+                    }
+                    break;
+                }
+                default: out += e; break;
+            }
+        } else {
+            out += c;
+        }
+    }
+    return out;
+}
+
+// 内置参考快照（跟 dm_learn dump 一致）
+static dm::learn::PageSnapshot makeDemoRefSnapshot() {
+    using namespace dm::learn;
+    PageSnapshot s;
+    s.url = "https://demo.local/";
+    s.title = "Demo";
+    s.viewportWidth = 800;
+    s.viewportHeight = 600;
+
+    NodeSnapshot n1;
+    n1.path = "html>body>div.0";
+    n1.tag = "div";
+    n1.className = "container";
+    n1.style.display = "flex";
+    n1.style.color = "0,0,0";
+    n1.style.fontSize = "16px";
+    n1.style.backgroundColor = "255,255,255";
+    n1.layout = {0, 0, 800, 100};
+    s.nodes.push_back(n1);
+
+    NodeSnapshot n2;
+    n2.path = "html>body>div.0>p.0";
+    n2.tag = "p";
+    n2.textPreview = "Hello";
+    n2.style.display = "block";
+    n2.style.color = "0,0,0";
+    n2.style.fontSize = "16px";
+    n2.layout = {10, 10, 100, 20};
+    s.nodes.push_back(n2);
+
+    return s;
+}
+
+// 页面快照采集脚本（内联）
+static const wchar_t* kCollectSnapshotScript = LR"JSS(
+(function () {
+  function getDepth(el) {
+    let d = 0, cur = el.parentElement;
+    while (cur) { d++; cur = cur.parentElement; }
+    return d;
+  }
+  function getPath(el) {
+    const parts = [];
+    let cur = el;
+    while (cur && cur.nodeType === 1) {
+      const tag = cur.tagName.toLowerCase();
+      const parent = cur.parentElement;
+      if (parent) {
+        let idx = 0;
+        for (const sib of parent.children) {
+          if (sib === cur) break;
+          if (sib.tagName === cur.tagName) idx++;
+        }
+        parts.unshift(tag + '.' + idx);
+      } else {
+        parts.unshift(tag);
+      }
+      cur = parent;
+    }
+    return parts.join('>');
+  }
+  function normColor(s) {
+    if (!s) return '';
+    const m = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+    if (m) {
+      return (m[4] !== undefined && parseFloat(m[4]) < 1)
+        ? m[1] + ',' + m[2] + ',' + m[3] + ',' + Math.round(parseFloat(m[4]) * 255)
+        : m[1] + ',' + m[2] + ',' + m[3];
+    }
+    return s;
+  }
+  function px(v) { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n); }
+  const nodes = [];
+  function collect(el) {
+    if (el.nodeType !== 1) return;
+    const cs = getComputedStyle(el);
+    const rc = el.getBoundingClientRect();
+    nodes.push({
+      path: getPath(el),
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      className: (typeof el.className === 'string') ? el.className : '',
+      depth: getDepth(el),
+      childCount: el.children.length,
+      textPreview: (el.textContent || '').trim().slice(0, 80),
+      alt: el.getAttribute('alt') || '',
+      ariaLabel: el.getAttribute('aria-label') || '',
+      role: el.getAttribute('role') || '',
+      style: {
+        color: normColor(cs.color),
+        backgroundColor: normColor(cs.backgroundColor),
+        fontSize: cs.fontSize || '',
+        fontWeight: cs.fontWeight || '',
+        display: cs.display || '',
+        position: cs.position || '',
+        textAlign: cs.textAlign || '',
+        marginTop: px(cs.marginTop),
+        marginBottom: px(cs.marginBottom),
+        marginLeft: px(cs.marginLeft),
+        marginRight: px(cs.marginRight),
+        paddingTop: px(cs.paddingTop),
+        paddingBottom: px(cs.paddingBottom),
+        paddingLeft: px(cs.paddingLeft),
+        paddingRight: px(cs.paddingRight),
+        borderWidth: px(cs.borderWidth),
+        borderStyle: cs.borderStyle || ''
+      },
+      layout: { x: rc.left, y: rc.top, w: rc.width, h: rc.height }
+    });
+    for (const c of el.children) collect(c);
+  }
+  if (!document.body) return '';
+  collect(document.body);
+  const maxDepth = nodes.reduce((m, n) => Math.max(m, n.depth), 0);
+  const snapshot = {
+    url: location.href,
+    title: document.title || '',
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    totalNodes: nodes.length,
+    maxDepth: maxDepth,
+    imageCount: document.images.length,
+    scriptCount: document.scripts.length,
+    styleSheetCount: document.styleSheets.length,
+    nodes: nodes
+  };
+  return JSON.stringify(snapshot);
+})();
+)JSS";
+
+// ============================================================
 // 构造 / 析构
 // ============================================================
 BrowserWindow::BrowserWindow() = default;
@@ -90,6 +277,7 @@ BrowserWindow::BrowserWindow() = default;
 BrowserWindow::~BrowserWindow() {
     bookmarkStore_.reset();
     settings_.reset();
+    learnStore_.reset();
     db_.close();
     if (sidebarController_) sidebarController_->Close();
     if (uiController_) uiController_->Close();
@@ -115,6 +303,10 @@ bool BrowserWindow::create(const std::wstring& title, int w, int h) {
         bookmarkStore_ = std::make_unique<BookmarkStore>(db_);
         settings_ = std::make_unique<SettingsStore>(db_);
         settings_->init();
+        learnStore_ = std::make_unique<dm::learn::LearnStore>(db_);
+        if (!learnStore_->init()) {
+            std::cerr << "[UI] 学习库初始化失败\n";
+        }
     } else {
         std::cerr << "[UI] 打开数据库失败: " << r.error().msg << "\n";
     }
@@ -211,7 +403,6 @@ void BrowserWindow::onEnvReady() {
                 if (!html.empty()) {
                     std::cout << "[UI] 加载 ui.html (" << html.size() << " 字节)\n";
 
-                    // 用虚拟主机映射，给页面一个 https origin，这样 localStorage 才能用
                     Microsoft::WRL::ComPtr<ICoreWebView2_3> wv3;
                     if (SUCCEEDED(uiWebView_->QueryInterface(IID_PPV_ARGS(&wv3)))) {
                         std::wstring dir = utf8ToWide(getExeDir());
@@ -550,7 +741,6 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
                 return S_OK;
             }).Get(), nullptr);
 
-    // favicon 监听（ICoreWebView2_15）
     Microsoft::WRL::ComPtr<ICoreWebView2_15> wv2;
     if (SUCCEEDED(t->webview.As(&wv2))) {
         wv2->add_FaviconChanged(
@@ -717,7 +907,6 @@ void BrowserWindow::handleUIMessage(const std::wstring& json) {
         if (end == std::wstring::npos) return L"";
         return json.substr(pos + 1, end - pos - 1);
     };
-    // 解析 JSON 布尔值：{"key":true} / {"key":false}
     auto findBool = [&json](const std::wstring& key) -> bool {
         auto pos = json.find(L"\"" + key + L"\"");
         if (pos == std::wstring::npos) return false;
@@ -837,6 +1026,8 @@ void BrowserWindow::handleSidebarMessage(const std::wstring& json) {
     else if (type == L"checkOllama") onCheckOllama();
     else if (type == L"loadAudit") onLoadAudit();
     else if (type == L"loadHistory") onLoadHistory();
+    else if (type == L"analyzePage") onAnalyzePage();
+    else if (type == L"loadFeatures") onLoadFeatures();
     else if (type == L"toggleSidebar") onToggleSidebar(false);
     else if (type == L"navigate") {
         std::wstring url = findType(L"url");
@@ -919,11 +1110,10 @@ void BrowserWindow::onAiChat(const std::wstring& json) {
 }
 
 // ============================================================
-// Ollama 检测（异步，避免阻塞 UI）
+// Ollama 检测
 // ============================================================
 void BrowserWindow::onCheckOllama() {
     std::cout << "[C++] onCheckOllama 被调用\n";
-    // 立即发"检测中"状态
     if (sidebarWebView_) {
         sidebarWebView_->PostWebMessageAsString(
             L"{\"type\":\"ollamaStatus\",\"ok\":false,\"status\":\"检测中...\"}");
@@ -963,6 +1153,162 @@ void BrowserWindow::onLoadHistory() {
     out << L"]}";
     if (sidebarWebView_)
         sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+}
+
+// ============================================================
+// 批 4A：学习库分析
+// ============================================================
+void BrowserWindow::onAnalyzePage() {
+    auto t = tabs_.active();
+    if (!t || !t->webview) {
+        sendAnalyzeError("没有活动标签页");
+        return;
+    }
+    if (t->url.rfind(L"dm://", 0) == 0 ||
+        t->url.rfind(L"about:", 0) == 0) {
+        sendAnalyzeError("内置页面（新标签页 / about:）无法采集快照");
+        return;
+    }
+
+    auto self = this;
+    t->webview->ExecuteScript(
+        kCollectSnapshotScript,
+        Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+            [self](HRESULT hr, LPCWSTR resultJson) -> HRESULT {
+                if (FAILED(hr) || !resultJson) {
+                    self->sendAnalyzeError("脚本执行失败");
+                    return S_OK;
+                }
+
+                std::string json = unquoteJsonString(resultJson);
+                if (json.empty()) {
+                    self->sendAnalyzeError("页面快照为空");
+                    return S_OK;
+                }
+
+                auto dm = dm::learn::parseSnapshotJson(json);
+                if (dm.nodes.empty()) {
+                    self->sendAnalyzeError("快照解析失败（节点数 0）");
+                    return S_OK;
+                }
+
+                auto ref = makeDemoRefSnapshot();
+                auto result = dm::learn::MultiCompare::compare(ref, dm);
+
+                std::set<std::string> feats;
+                for (auto& d : result.diffs) {
+                    if (d.dimension == "style") {
+                        if (d.property == "display") {
+                            if (d.refValue.find("flex") != std::string::npos)
+                                feats.insert("display:flex");
+                            else if (d.refValue.find("grid") != std::string::npos)
+                                feats.insert("display:grid");
+                            else if (d.refValue.find("inline-block") != std::string::npos)
+                                feats.insert("display:inline-block");
+                        }
+                        if (d.property == "position") {
+                            if (d.refValue == "absolute") feats.insert("position:absolute");
+                            if (d.refValue == "fixed")    feats.insert("position:fixed");
+                            if (d.refValue == "relative") feats.insert("position:relative");
+                        }
+                        if (d.property == "fontSize") feats.insert("font-size");
+                        if (d.property == "color")    feats.insert("color");
+                        if (d.property == "backgroundColor")
+                            feats.insert("background-color");
+                    }
+                    if (d.dimension == "layout") {
+                        if (d.property == "width")  feats.insert("width:auto");
+                        if (d.property == "height") feats.insert("height:auto");
+                    }
+                    if (d.dimension == "structural" &&
+                        d.category == "missing_node") {
+                        feats.insert("node:" + d.refValue);
+                    }
+                }
+
+                if (self->learnStore_) {
+                    for (auto& f : feats) {
+                        self->learnStore_->recordFeature(f, false);
+                    }
+                    self->learnStore_->recalcPriorities();
+                }
+
+                self->sendAnalyzeResult(result,
+                    std::vector<std::string>(feats.begin(), feats.end()));
+                return S_OK;
+            }).Get());
+}
+
+void BrowserWindow::onLoadFeatures() {
+    if (!sidebarWebView_) return;
+
+    std::wostringstream out;
+    out << L"{\"type\":\"featuresList\",\"items\":[";
+
+    if (learnStore_) {
+        auto items = learnStore_->listFeaturesByPriority();
+        bool first = true;
+        for (auto& f : items) {
+            if (!first) out << L",";
+            first = false;
+            out << L"{\"feature\":\"" << escapeJson(utf8ToWide(f.feature)) << L"\",";
+            out << L"\"tested\":"   << f.tested   << L",";
+            out << L"\"passed\":"   << f.passed   << L",";
+            out << L"\"failed\":"   << f.failed   << L",";
+            out << L"\"priority\":" << f.priority << L"}";
+        }
+    }
+    out << L"]}";
+    sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+}
+
+void BrowserWindow::sendAnalyzeResult(
+    const dm::learn::MultiDimResult& result,
+    const std::vector<std::string>& inferred) {
+    if (!sidebarWebView_) return;
+
+    std::wostringstream out;
+    out << L"{\"type\":\"analyzeResult\",\"result\":{";
+    out << L"\"structuralScore\":" << result.structuralScore << L",";
+    out << L"\"styleScore\":"      << result.styleScore      << L",";
+    out << L"\"layoutScore\":"     << result.layoutScore     << L",";
+    out << L"\"structuralDiffCount\":" << result.structuralDiffCount << L",";
+    out << L"\"styleDiffCount\":"      << result.styleDiffCount      << L",";
+    out << L"\"layoutDiffCount\":"     << result.layoutDiffCount     << L",";
+
+    out << L"\"diffs\":[";
+    bool first = true;
+    for (auto& d : result.diffs) {
+        if (!first) out << L",";
+        first = false;
+        out << L"{\"dimension\":\"" << escapeJson(utf8ToWide(d.dimension)) << L"\",";
+        out << L"\"category\":\""   << escapeJson(utf8ToWide(d.category))  << L"\",";
+        out << L"\"path\":\""       << escapeJson(utf8ToWide(d.path))      << L"\",";
+        out << L"\"property\":\""   << escapeJson(utf8ToWide(d.property))  << L"\",";
+        out << L"\"refValue\":\""   << escapeJson(utf8ToWide(d.refValue))  << L"\",";
+        out << L"\"dmValue\":\""    << escapeJson(utf8ToWide(d.dmValue))   << L"\",";
+        out << L"\"severity\":"     << d.severity << L"}";
+    }
+    out << L"],";
+
+    out << L"\"inferred\":[";
+    first = true;
+    for (auto& f : inferred) {
+        if (!first) out << L",";
+        first = false;
+        out << L"\"" << escapeJson(utf8ToWide(f)) << L"\"";
+    }
+    out << L"]}}";
+
+    sidebarWebView_->PostWebMessageAsString(out.str().c_str());
+}
+
+void BrowserWindow::sendAnalyzeError(const std::string& error) {
+    if (!sidebarWebView_) return;
+    std::wostringstream out;
+    out << L"{\"type\":\"analyzeError\",\"error\":\""
+        << escapeJson(utf8ToWide(error)) << L"\"}";
+    sidebarWebView_->PostWebMessageAsString(out.str().c_str());
 }
 
 // ============================================================
@@ -1030,7 +1376,6 @@ LRESULT CALLBACK BrowserWindow::WndProc(HWND hwnd, UINT msg,
             }
             return 0;
         }
-        // ---- AI 消息封送（后台线程 → 主线程）----
         case WM_AI_CHUNK: {
             auto* pair = (std::pair<std::wstring, std::wstring>*)lp;
             if (self && self->sidebarWebView_ && pair) {
@@ -1067,7 +1412,6 @@ LRESULT CALLBACK BrowserWindow::WndProc(HWND hwnd, UINT msg,
             delete pair;
             return 0;
         }
-        // ---- Ollama 检测结果封送 ----
         case WM_OLLAMA_RESULT: {
             std::cout << "[C++] WM_OLLAMA_RESULT 收到\n";
             auto* models = (std::vector<std::string>*)lp;
