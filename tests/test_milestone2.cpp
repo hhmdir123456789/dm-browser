@@ -10,7 +10,7 @@ TEST(M2_BookmarkAdd) {
     db.exec("CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT, created_at INTEGER)");
     BookmarkStore store(db);
     auto r = store.add("DM", "https://dm.dm");
-    EXPECT_TRUE(r.ok());
+    EXPECT_TRUE(r.isOk());
     EXPECT_EQ(store.size(), (size_t)1);
 }
 
@@ -30,6 +30,6 @@ TEST(M2_DownloadCreate) {
     db.exec("CREATE TABLE IF NOT EXISTS downloads (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT, filename TEXT, state TEXT, bytes_received INTEGER, total_bytes INTEGER, created_at INTEGER)");
     DownloadStore store(db);
     auto r = store.create("https://f.dm/a.zip", "a.zip");
-    EXPECT_TRUE(r.ok());
+    EXPECT_TRUE(r.isOk());
     EXPECT_EQ(store.size(), (size_t)1);
 }

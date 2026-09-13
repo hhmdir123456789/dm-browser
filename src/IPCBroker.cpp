@@ -50,7 +50,7 @@ InvokeResult IPCBroker::invoke(const PluginId& pid, const InvokeEnvelope& env) {
 Result<bool> IPCBroker::startServerFor(Pid pid, const std::string& pipeName) {
     auto pipe = std::make_unique<dm::ipc::Pipe>();
     auto r = pipe->createServer(pipeName);
-    if (!r.ok()) return r;
+    if (!r.isOk()) return r;
     std::lock_guard lock(mu_);
     servers_[pid] = std::move(pipe);
     return Result<bool>::ok(true);
@@ -70,15 +70,15 @@ Result<bool> IPCBroker::waitForPlugin(Pid pid, int /*timeoutMs*/) {
     }
 
     auto conn = pipe->waitForClient();
-    if (!conn.ok()) return conn;
+    if (!conn.isOk()) return conn;
 
     // 消费插件发来的第一帧（Hello）
     auto helloFrame = dm::ipc::Framing::readFrame(*pipe);
-    if (helloFrame.ok()) {
+    if (helloFrame.isOk()) {
         auto kind = dm::ipc::Framing::peekKind(helloFrame.value());
         if (kind == dm::ipc::Framing::Kind::Hello) {
             auto hello = dm::ipc::Framing::decodeHello(helloFrame.value());
-            if (hello.ok()) {
+            if (hello.isOk()) {
                 std::cerr << "[IPC] 收到 Hello, plugin="
                           << hello.value().pluginId << "\n";
             }
@@ -124,7 +124,7 @@ InvokeResult IPCBroker::sendInvokeToPlugin(
     std::cerr << "[IPC] 编码完成, " << payload.size() << " 字节\n";
 
     auto w = dm::ipc::Framing::writeFrame(*pipe, payload);
-    if (!w.ok()) {
+    if (!w.isOk()) {
         std::cerr << "[IPC] writeFrame 失败: " << w.error().msg << "\n";
         InvokeResult out;
         out.ok = false;
@@ -138,7 +138,7 @@ InvokeResult IPCBroker::sendInvokeToPlugin(
     bool gotResult = false;
     for (int attempt = 0; attempt < 10; ++attempt) {
         auto response = dm::ipc::Framing::readFrame(*pipe);
-        if (!response.ok()) {
+        if (!response.isOk()) {
             std::cerr << "[IPC] readFrame 失败: " << response.error().msg << "\n";
             InvokeResult out;
             out.ok = false;
@@ -154,7 +154,7 @@ InvokeResult IPCBroker::sendInvokeToPlugin(
         }
         if (kind == dm::ipc::Framing::Kind::Result) {
             auto result = dm::ipc::Framing::decodeResult(response.value());
-            if (!result.ok()) {
+            if (!result.isOk()) {
                 std::cerr << "[IPC] decodeResult 失败: " << result.error().msg << "\n";
                 InvokeResult out;
                 out.ok = false;
@@ -209,7 +209,7 @@ InvokeResult IPCBroker::sendControlToPlugin(
     auto payload = dm::ipc::Framing::encodeInvoke(
         "", "control", method, args, "t-ctrl", "");
     auto w = dm::ipc::Framing::writeFrame(*pipe, payload);
-    if (!w.ok()) {
+    if (!w.isOk()) {
         InvokeResult out;
         out.ok = false;
         out.error = Error::internal("write failed: " + w.error().msg);
@@ -217,7 +217,7 @@ InvokeResult IPCBroker::sendControlToPlugin(
     }
 
     auto response = dm::ipc::Framing::readFrame(*pipe);
-    if (!response.ok()) {
+    if (!response.isOk()) {
         InvokeResult out;
         out.ok = false;
         out.error = Error::internal("read failed: " + response.error().msg);
@@ -225,7 +225,7 @@ InvokeResult IPCBroker::sendControlToPlugin(
     }
 
     auto result = dm::ipc::Framing::decodeResult(response.value());
-    if (!result.ok()) {
+    if (!result.isOk()) {
         InvokeResult out;
         out.ok = false;
         out.error = Error::internal("decode failed: " + result.error().msg);

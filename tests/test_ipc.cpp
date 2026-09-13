@@ -9,7 +9,7 @@ TEST(IPC_EncodeDecodeInvoke) {
     auto kind = dm::ipc::Framing::peekKind(frame);
     EXPECT_EQ((int)kind, (int)dm::ipc::Framing::Kind::Invoke);
     auto m = dm::ipc::Framing::decodeInvoke(frame);
-    EXPECT_TRUE(m.ok());
+    EXPECT_TRUE(m.isOk());
     EXPECT_EQ(m.value().endpoint, std::string("Ping"));
     EXPECT_EQ(m.value().method, std::string("hello"));
 }
@@ -19,7 +19,7 @@ TEST(IPC_EncodeDecodeResult) {
     auto kind = dm::ipc::Framing::peekKind(frame);
     EXPECT_EQ((int)kind, (int)dm::ipc::Framing::Kind::Result);
     auto m = dm::ipc::Framing::decodeResult(frame);
-    EXPECT_TRUE(m.ok());
+    EXPECT_TRUE(m.isOk());
     EXPECT_TRUE(m.value().ok);
     EXPECT_EQ(m.value().value, std::string("value"));
 }

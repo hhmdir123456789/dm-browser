@@ -289,7 +289,15 @@
 
     if (window.chrome && window.chrome.webview) {
       window.chrome.webview.addEventListener('message', (e) => {
-        const msg = e.data;
+        let msg;
+        try {
+          msg = (typeof e.data === 'string') ? JSON.parse(e.data) : e.data;
+        } catch (err) {
+          console.error('[UI] JSON.parse failed:', err, e.data);
+          return;
+        }
+        if (!msg || !msg.type) return;
+
         if (msg.type === 'updateTabs') {
           tabs = msg.tabs;
           activeId = msg.activeId;

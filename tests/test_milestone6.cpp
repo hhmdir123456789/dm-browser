@@ -11,6 +11,6 @@ TEST(M6_DisputeReport) {
     db.exec("CREATE TABLE IF NOT EXISTS dispute_appeal (case_id TEXT, note TEXT, created_at INTEGER)");
     DisputeManager dm(db);
     auto r = dm.report("plugin.a", "user1", "reason");
-    EXPECT_TRUE(r.ok());
+    EXPECT_TRUE(r.isOk());
     EXPECT_EQ(dm.count(), (size_t)1);
 }

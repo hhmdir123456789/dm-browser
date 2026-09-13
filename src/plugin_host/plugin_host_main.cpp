@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
     // 连接管道
     Pipe pipe;
     auto conn = pipe.connectClient(pipeName);
-    if (!conn.ok()) {
+    if (!conn.isOk()) {
         std::cerr << "[host] connect failed: " << conn.error().msg << "\n";
         return 2;
     }
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
     // 事件循环
     while (true) {
         auto frame = Framing::readFrame(pipe);
-        if (!frame.ok()) break;
+        if (!frame.isOk()) break;
 
         auto kind = Framing::peekKind(frame.value());
         if (kind == Framing::Kind::Shutdown) break;
@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
         if (kind != Framing::Kind::Invoke) continue;
 
         auto invoke = Framing::decodeInvoke(frame.value());
-        if (!invoke.ok()) continue;
+        if (!invoke.isOk()) continue;
 
         const std::string& method = invoke.value().method;
         const std::string& args = invoke.value().args;

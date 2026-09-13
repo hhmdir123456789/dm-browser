@@ -9,6 +9,8 @@
 #include <WebView2.h>
 #include <WebView2EnvironmentOptions.h>
 #include "ui/TabManager.h"
+#include "db/Database.h"
+#include "Storage.h"
 
 namespace dm::ui {
 
@@ -37,9 +39,11 @@ private:
     std::wstring loadStartPage();
     std::wstring readFileAsWide(const std::string& path);
 
-    void syncTabsToUI();
+    void syncTabsToUI(bool force = false);
     void syncAddressToUI(const std::wstring& url);
     void syncNavStateToUI(bool canBack, bool canForward);
+    void syncStarStateToUI(bool starred);
+    void sendBookmarksToContent();
 
     void handleUIMessage(const std::wstring& json);
     void onContentNavCompleted(int64_t tabId);
@@ -66,9 +70,13 @@ private:
     std::mutex syncMutex_;
     std::mutex pendingMutex_;
     std::mutex fileMutex_;
+    std::atomic<ULONGLONG> lastSyncMs_{0};
 
     std::wstring cachedUIHtml_;
     std::wstring cachedStartPage_;
+
+    Database db_;
+    std::unique_ptr<BookmarkStore> bookmarkStore_;
 };
 
 } // namespace dm::ui

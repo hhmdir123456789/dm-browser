@@ -25,9 +25,6 @@ if(WIN32)
         endif()
         file(MAKE_DIRECTORY "${WEBVIEW2_DIR}")
         file(ARCHIVE_EXTRACT INPUT "${WEBVIEW2_NUPKG}" DESTINATION "${WEBVIEW2_DIR}")
-        if(NOT EXISTS "${WEBVIEW2_HEADER}")
-            message(FATAL_ERROR "WebView2 header missing after extract")
-        endif()
     endif()
 
     set(WEBVIEW2_INCLUDE "${WEBVIEW2_DIR}/build/native/include")
@@ -65,20 +62,20 @@ target_compile_options(dm_browser PRIVATE /W3 /utf-8)
 if(WIN32)
     target_link_libraries(dm_browser PRIVATE userenv)
 
-    # --- UI：HTML/CSS 双层 WebView2 ---
     add_executable(dm_ui
+        src/db/Database.cpp
         src/ui/BrowserWindow.cpp
         src/ui/TabManager.cpp
         src/ui/ui_main.cpp
     )
     target_include_directories(dm_ui PRIVATE src "${WEBVIEW2_INCLUDE}")
     target_link_libraries(dm_ui PRIVATE
+        sqlite3
         "${WEBVIEW2_LIB}"
         shlwapi ole32 oleaut32
     )
     target_compile_options(dm_ui PRIVATE /W3 /utf-8)
 
-    # 复制 UI 资源到输出目录
     add_custom_command(TARGET dm_ui POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/src/ui/ui.html"
@@ -94,9 +91,7 @@ if(WIN32)
     )
     target_include_directories(example_plugin PRIVATE src)
     set_target_properties(example_plugin PROPERTIES
-        PREFIX ""
-        OUTPUT_NAME "example_plugin"
-    )
+        PREFIX "" OUTPUT_NAME "example_plugin")
     target_compile_options(example_plugin PRIVATE /W3 /utf-8)
 endif()
 
@@ -121,3 +116,23 @@ add_executable(dm_tests
 target_include_directories(dm_tests PRIVATE src tests)
 target_link_libraries(dm_tests PRIVATE sqlite3)
 target_compile_options(dm_tests PRIVATE /W3 /utf-8)
+
+# ============================================================
+# 安装规则
+# ============================================================
+install(TARGETS dm_browser dm_plugin_host dm_tests dm_ui example_plugin
+        RUNTIME DESTINATION bin)
+install(FILES
+        "${CMAKE_SOURCE_DIR}/src/ui/ui.html"
+        "${CMAKE_SOURCE_DIR}/src/ui/start_page.html"
+        DESTINATION bin)
+
+# ============================================================
+# CPack 打包
+# ============================================================
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_NAME "dm-browser")
+set(CPACK_PACKAGE_VERSION "0.1.0")
+set(CPACK_PACKAGE_DESCRIPTION "大明DM浏览器")
+set(CPACK_PACKAGE_FILE_NAME "dm-browser-${CPACK_PACKAGE_VERSION}-win64")
+include(CPack)

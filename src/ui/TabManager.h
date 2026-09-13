@@ -13,6 +13,7 @@ struct Tab {
     int64_t id{0};
     std::wstring title{L"新标签页"};
     std::wstring url{L""};
+    std::wstring faviconUrl{L""};
     bool loading{false};
     bool navHandlerRegistered{false};
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;

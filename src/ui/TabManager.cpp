@@ -39,9 +39,9 @@ bool TabManager::close(int64_t id) {
         if (tabs_.empty()) {
             activeId_ = 0;
         } else if (idx < tabs_.size()) {
-            activeId_ = tabs_[idx]->id;      // 右侧优先
+            activeId_ = tabs_[idx]->id;
         } else {
-            activeId_ = tabs_.back()->id;    // 左侧兜底
+            activeId_ = tabs_.back()->id;
         }
     }
     fixActiveId();

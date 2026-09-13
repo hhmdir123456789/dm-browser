@@ -39,7 +39,7 @@ public:
         MarketPlugin e = p;
         if (!p.keyId.empty() && !p.signature.empty()) {
             auto v = verifier_.verify(p.keyId, payload, p.signature);
-            if (!v.ok()) return Result<bool>::fail(v.error());
+            if (!v.isOk()) return Result<bool>::fail(v.error());
             e.tier = v.value();
         }
         if (e.tier != MarketTier::Unsigned && e.endpoints.empty())

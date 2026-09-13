@@ -2,6 +2,8 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <cstdint>
+#include <algorithm>
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ole32.lib")
@@ -19,6 +21,25 @@ static std::string wideToUtf8(const std::wstring& w) {
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(),
                         (int)w.size(), &out[0], size, nullptr, nullptr);
     return out;
+}
+
+static std::wstring utf8ToWide(const std::string& s) {
+    if (s.empty()) return L"";
+    int size = MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
+                                   (int)s.size(), nullptr, 0);
+    std::wstring out(size, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
+                        (int)s.size(), &out[0], size);
+    return out;
+}
+
+static std::string getExeDir() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    std::string dir = exePath;
+    auto pos = dir.find_last_of("\\/");
+    if (pos != std::string::npos) dir = dir.substr(0, pos + 1);
+    return dir;
 }
 
 static std::wstring escapeJson(const std::wstring& s) {
@@ -58,6 +79,8 @@ static std::wstring urlEncode(const std::wstring& s) {
 BrowserWindow::BrowserWindow() = default;
 
 BrowserWindow::~BrowserWindow() {
+    bookmarkStore_.reset();
+    db_.close();
     if (uiController_) uiController_->Close();
     for (auto& t : tabs_.allMutable()) {
         if (t->controller) t->controller->Close();
@@ -68,6 +91,17 @@ BrowserWindow::~BrowserWindow() {
 
 bool BrowserWindow::create(const std::wstring& title, int w, int h) {
     width_ = w; height_ = h;
+
+    std::string dbPath = getExeDir() + "dm_ui.db";
+    auto r = db_.open(dbPath);
+    if (r.isOk()) {
+        db_.exec("CREATE TABLE IF NOT EXISTS bookmarks ("
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                 "title TEXT, url TEXT, created_at INTEGER)");
+        bookmarkStore_ = std::make_unique<BookmarkStore>(db_);
+    } else {
+        std::cerr << "[UI] 打开数据库失败: " << r.error().msg << "\n";
+    }
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -134,19 +168,13 @@ void BrowserWindow::onEnvReady() {
                             LPWSTR json = nullptr;
                             HRESULT r = args->TryGetWebMessageAsString(&json);
                             if (SUCCEEDED(r) && json) {
-                                std::cout << "[C++] 收到 UI 消息: "
-                                          << wideToUtf8(json) << "\n";
                                 handleUIMessage(json);
                                 CoTaskMemFree(json);
                             } else {
                                 LPWSTR raw = nullptr;
                                 if (SUCCEEDED(args->get_WebMessageAsJson(&raw)) && raw) {
-                                    std::cout << "[C++] 收到 UI JSON: "
-                                              << wideToUtf8(raw) << "\n";
                                     handleUIMessage(raw);
                                     CoTaskMemFree(raw);
-                                } else {
-                                    std::cout << "[C++] 消息读取失败\n";
                                 }
                             }
                             return S_OK;
@@ -162,19 +190,6 @@ void BrowserWindow::onEnvReady() {
                 if (!html.empty()) {
                     std::cout << "[UI] 加载 ui.html (" << html.size() << " 字节)\n";
                     uiWebView_->NavigateToString(html.c_str());
-                } else {
-                    std::cerr << "[UI] ui.html 读取失败\n";
-                }
-
-                {
-                    std::lock_guard lock(pendingMutex_);
-                    for (auto& u : pendingUrls_) createTab(u);
-                    pendingUrls_.clear();
-                    for (auto id : pendingTabs_) {
-                        (void)id;
-                        createTab(L"");
-                    }
-                    pendingTabs_.clear();
                 }
 
                 if (tabs_.count() == 0) createTab(L"");
@@ -190,24 +205,14 @@ std::wstring BrowserWindow::readFileAsWide(const std::string& path) {
     ss << f.rdbuf();
     std::string s = ss.str();
     if (s.empty()) return L"";
-    int size = MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
-                                   (int)s.size(), nullptr, 0);
-    std::wstring out(size, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
-                        (int)s.size(), &out[0], size);
-    return out;
+    return utf8ToWide(s);
 }
 
 std::wstring BrowserWindow::loadUIHtml() {
     if (!cachedUIHtml_.empty()) return cachedUIHtml_;
     cachedUIHtml_ = readFileAsWide("ui.html");
     if (cachedUIHtml_.empty()) {
-        char exePath[MAX_PATH];
-        GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-        std::string dir = exePath;
-        auto pos = dir.find_last_of("\\/");
-        if (pos != std::string::npos) dir = dir.substr(0, pos + 1);
-        cachedUIHtml_ = readFileAsWide(dir + "ui.html");
+        cachedUIHtml_ = readFileAsWide(getExeDir() + "ui.html");
     }
     return cachedUIHtml_;
 }
@@ -216,23 +221,15 @@ std::wstring BrowserWindow::loadStartPage() {
     if (!cachedStartPage_.empty()) return cachedStartPage_;
     cachedStartPage_ = readFileAsWide("start_page.html");
     if (cachedStartPage_.empty()) {
-        char exePath[MAX_PATH];
-        GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-        std::string dir = exePath;
-        auto pos = dir.find_last_of("\\/");
-        if (pos != std::string::npos) dir = dir.substr(0, pos + 1);
-        cachedStartPage_ = readFileAsWide(dir + "start_page.html");
+        cachedStartPage_ = readFileAsWide(getExeDir() + "start_page.html");
     }
     return cachedStartPage_;
 }
 
 void BrowserWindow::createTab(const std::wstring& url) {
-    std::cout << "[C++] createTab 开始, url=" << wideToUtf8(url) << "\n";
-
     {
         std::lock_guard lock(createMutex_);
         if (!envReady_) {
-            std::cout << "[C++] env 未就绪，挂起\n";
             std::lock_guard plock(pendingMutex_);
             pendingUrls_.push_back(url);
             return;
@@ -241,24 +238,18 @@ void BrowserWindow::createTab(const std::wstring& url) {
 
     int64_t id = tabs_.create();
     tabs_.activate(id);
-    std::cout << "[C++] 新建标签 id=" << id
-              << ", 当前标签数=" << tabs_.count() << "\n";
-    syncTabsToUI();
+    syncTabsToUI(true);
 
     std::wstring target = url;
     bool useStartPage = (url.empty() || url == L"about:blank");
 
-    std::cout << "[C++] 准备创建 WebView2 controller\n";
     env_->CreateCoreWebView2Controller(hwnd_,
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
             [this, id, target, useStartPage](HRESULT result,
                     ICoreWebView2Controller* ctrl) -> HRESULT {
-                std::cout << "[C++] controller 回调 hr="
-                          << std::hex << result << std::dec << "\n";
                 if (FAILED(result) || !ctrl) {
-                    std::cout << "[C++] controller 创建失败，关闭标签\n";
                     tabs_.close(id);
-                    syncTabsToUI();
+                    syncTabsToUI(true);
                     return S_OK;
                 }
                 auto t = tabs_.get(id);
@@ -271,6 +262,22 @@ void BrowserWindow::createTab(const std::wstring& url) {
                 RECT bounds{0, uiHeight_, width_, height_};
                 ctrl->put_Bounds(bounds);
                 ctrl->put_IsVisible(tabs_.activeId() == id ? TRUE : FALSE);
+
+                // 内容层消息接收
+                t->webview->add_WebMessageReceived(
+                    Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                        [this](ICoreWebView2*,
+                               ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                            LPWSTR json = nullptr;
+                            if (SUCCEEDED(args->TryGetWebMessageAsString(&json)) && json) {
+                                std::wstring msg = json;
+                                CoTaskMemFree(json);
+                                if (msg.find(L"startPageReady") != std::wstring::npos) {
+                                    sendBookmarksToContent();
+                                }
+                            }
+                            return S_OK;
+                        }).Get(), nullptr);
 
                 onContentNavCompleted(id);
 
@@ -295,63 +302,53 @@ void BrowserWindow::createTab(const std::wstring& url) {
                     syncAddressToUI(target);
                 }
 
-                std::cout << "[C++] 标签 " << id << " 初始化完成\n";
-                syncTabsToUI();
+                syncTabsToUI(true);
                 layout();
+                activateTab(id);                              // ← 新增：重新激活，确保可见
+                InvalidateRect(hwnd_, nullptr, TRUE);         // ← 新增：强制重绘
+                UpdateWindow(hwnd_);                          // ← 新增：立即刷新
                 return S_OK;
             }).Get());
 }
 
 void BrowserWindow::closeTab(int64_t id) {
-    std::cout << "[C++] closeTab id=" << id << "\n";
     auto t = tabs_.get(id);
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> ctrl;
     if (t) ctrl = t->controller;
-
     tabs_.close(id);
-
     if (ctrl) ctrl->Close();
-
     if (tabs_.count() > 0) {
         activateTab(tabs_.activeId());
     } else {
         createTab(L"");
     }
-    syncTabsToUI();
+    syncTabsToUI(true);
 }
 
 void BrowserWindow::activateTab(int64_t id) {
-    std::cout << "[C++] activateTab id=" << id << "\n";
-    if (!tabs_.activate(id)) {
-        std::cout << "[C++] 激活失败，标签不存在\n";
-        return;
-    }
-
+    if (!tabs_.activate(id)) return;
     for (auto& t : tabs_.allMutable()) {
         if (t->controller) {
-            t->controller->put_IsVisible(t->id == id ? TRUE : FALSE);
             if (t->id == id) {
                 RECT bounds{0, uiHeight_, width_, height_};
                 t->controller->put_Bounds(bounds);
+                t->controller->put_IsVisible(TRUE);
+            } else {
+                t->controller->put_IsVisible(FALSE);
             }
         }
     }
-
     auto t = tabs_.get(id);
     if (t) {
         syncAddressToUI(t->url);
         updateLockIcon(t->url);
     }
-    syncTabsToUI();
+    syncTabsToUI(true);
 }
 
 void BrowserWindow::navigateActive(const std::wstring& url) {
-    std::cout << "[C++] navigateActive url=" << wideToUtf8(url) << "\n";
     auto t = tabs_.active();
-    if (!t || !t->webview) {
-        std::cout << "[C++] 没有激活标签或 webview\n";
-        return;
-    }
+    if (!t || !t->webview) return;
 
     std::wstring finalUrl = url;
     if (finalUrl.empty()) return;
@@ -364,7 +361,7 @@ void BrowserWindow::navigateActive(const std::wstring& url) {
             t->title = L"新标签页";
             syncAddressToUI(L"dm://start");
             updateLockIcon(L"dm://start");
-            syncTabsToUI();
+            syncTabsToUI(true);
         }
         return;
     }
@@ -376,11 +373,11 @@ void BrowserWindow::navigateActive(const std::wstring& url) {
 
     t->url = finalUrl;
     std::wstring enc = urlEncode(finalUrl);
-    std::cout << "[C++] Navigate 到 " << wideToUtf8(enc) << "\n";
     t->webview->Navigate(enc.c_str());
     syncAddressToUI(finalUrl);
     updateLockIcon(finalUrl);
-    syncTabsToUI();
+    syncStarStateToUI(false);
+    syncTabsToUI(true);
 }
 
 void BrowserWindow::onContentNavCompleted(int64_t tabId) {
@@ -401,10 +398,12 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
                 LPWSTR uri = nullptr;
                 sender->get_Source(&uri);
                 if (uri) {
-                    tt->url = uri;
+                    if (wcscmp(uri, L"about:blank") != 0) {
+                        tt->url = uri;
+                    }
                     if (tabs_.activeId() == tabId) {
-                        syncAddressToUI(uri);
-                        updateLockIcon(uri);
+                        syncAddressToUI(tt->url);
+                        updateLockIcon(tt->url);
                     }
                     CoTaskMemFree(uri);
                 }
@@ -426,33 +425,97 @@ void BrowserWindow::onContentNavCompleted(int64_t tabId) {
                 syncTabsToUI();
                 return S_OK;
             }).Get(), nullptr);
+
+    // favicon 监听（ICoreWebView2_15）
+    Microsoft::WRL::ComPtr<ICoreWebView2_15> wv2;
+    if (SUCCEEDED(t->webview.As(&wv2))) {
+        wv2->add_FaviconChanged(
+            Microsoft::WRL::Callback<ICoreWebView2FaviconChangedEventHandler>(
+                [this, tabId](ICoreWebView2* sender, IUnknown*) -> HRESULT {
+                    auto tt = tabs_.get(tabId);
+                    if (!tt) return S_OK;
+
+                    Microsoft::WRL::ComPtr<ICoreWebView2_15> s2;
+                    if (FAILED(sender->QueryInterface(IID_PPV_ARGS(&s2)))) return S_OK;
+
+                    s2->GetFavicon(
+                        COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
+                        Microsoft::WRL::Callback<ICoreWebView2GetFaviconCompletedHandler>(
+                            [this, tabId](HRESULT result, IStream* stream) -> HRESULT {
+                                if (FAILED(result) || !stream) return S_OK;
+                                auto tt = tabs_.get(tabId);
+                                if (!tt) return S_OK;
+
+                                Microsoft::WRL::ComPtr<IStream> spStream(stream);
+                                LARGE_INTEGER zero{};
+                                spStream->Seek(zero, STREAM_SEEK_SET, nullptr);
+
+                                std::vector<BYTE> buf(65536);
+                                ULONG read = 0;
+                                spStream->Read(buf.data(), (ULONG)buf.size(), &read);
+                                if (read == 0) return S_OK;
+                                if (read > 8192) read = 8192;
+                                buf.resize(read);
+
+                                static const wchar_t* kTable =
+                                    L"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                    L"abcdefghijklmnopqrstuvwxyz"
+                                    L"0123456789+/";
+                                std::wstring b64;
+                                b64.reserve(((read + 2) / 3) * 4);
+                                for (size_t i = 0; i < read; i += 3) {
+                                    uint32_t n = buf[i] << 16;
+                                    if (i + 1 < read) n |= buf[i + 1] << 8;
+                                    if (i + 2 < read) n |= buf[i + 2];
+                                    b64 += kTable[(n >> 18) & 63];
+                                    b64 += kTable[(n >> 12) & 63];
+                                    b64 += (i + 1 < read) ? kTable[(n >> 6) & 63] : L'=';
+                                    b64 += (i + 2 < read) ? kTable[n & 63] : L'=';
+                                }
+
+                                tt->faviconUrl = L"data:image/png;base64," + b64;
+                                syncTabsToUI();
+                                return S_OK;
+                            }).Get());
+                    return S_OK;
+                }).Get(), nullptr);
+    }
 }
 
-void BrowserWindow::syncTabsToUI() {
-    if (!uiWebView_) {
-        std::cout << "[C++] syncTabsToUI: uiWebView_ 为空\n";
+void BrowserWindow::syncTabsToUI(bool force) {
+    std::cout << "[C++] syncTabsToUI 被调用, force=" << force
+              << ", uiWebView_=" << (uiWebView_ ? "yes" : "null") << "\n";
+    if (!uiWebView_) return;
+
+    ULONGLONG now = GetTickCount64();
+    ULONGLONG last = lastSyncMs_.load();
+    if (!force && last != 0 && now - last < 200) {
+        std::cout << "[C++] syncTabsToUI 被节流跳过\n";
         return;
     }
+    lastSyncMs_.store(now);
 
     std::lock_guard lock(syncMutex_);
 
     int64_t aid = tabs_.activeId();
     std::wostringstream json;
-    json << L"{\"type\":\"updateTabs\",\"activeId\":" << aid
-         << L",\"tabs\":[";
+    json << L"{\"type\":\"updateTabs\",\"activeId\":" << aid << L",\"tabs\":[";
     bool first = true;
     for (const auto& t : tabs_.all()) {
         if (!first) json << L",";
         first = false;
+        std::wstring fav = t->faviconUrl;
+        if (fav.size() > 16000) fav = L"";
         json << L"{\"id\":" << t->id
              << L",\"title\":\"" << escapeJson(t->title) << L"\""
              << L",\"url\":\"" << escapeJson(t->url) << L"\""
+             << L",\"favicon\":\"" << escapeJson(fav) << L"\""
              << L",\"loading\":" << (t->loading ? L"true" : L"false")
              << L"}";
     }
     json << L"]}";
 
-    std::cout << "[C++] syncTabsToUI -> " << wideToUtf8(json.str()) << "\n";
+    std::wcout << L"[C++] syncTabsToUI 发送: " << json.str() << L"\n";
     uiWebView_->PostWebMessageAsString(json.str().c_str());
 }
 
@@ -474,6 +537,38 @@ void BrowserWindow::syncNavStateToUI(bool canBack, bool canForward) {
     uiWebView_->PostWebMessageAsString(json.str().c_str());
 }
 
+void BrowserWindow::syncStarStateToUI(bool starred) {
+    if (!uiWebView_) return;
+    std::lock_guard lock(syncMutex_);
+    std::wostringstream json;
+    json << L"{\"type\":\"updateStar\",\"starred\":"
+         << (starred ? L"true" : L"false") << L"}";
+    uiWebView_->PostWebMessageAsString(json.str().c_str());
+}
+
+void BrowserWindow::sendBookmarksToContent() {
+    if (!bookmarkStore_) return;
+
+    std::wostringstream json;
+    json << L"{\"type\":\"updateBookmarks\",\"items\":[";
+    auto items = bookmarkStore_->list();
+    bool first = true;
+    for (const auto& b : items) {
+        if (!first) json << L",";
+        first = false;
+        json << L"{\"title\":\"" << escapeJson(utf8ToWide(b.title)) << L"\""
+             << L",\"url\":\"" << escapeJson(utf8ToWide(b.url)) << L"\"}";
+    }
+    json << L"]}";
+
+    auto tabs = tabs_.all();
+    for (auto& t : tabs) {
+        if (t->webview && t->url == L"dm://start") {
+            t->webview->PostWebMessageAsString(json.str().c_str());
+        }
+    }
+}
+
 void BrowserWindow::updateLockIcon(const std::wstring& url) {
     if (!uiWebView_) return;
     std::wstring icon = L"📄";
@@ -486,6 +581,8 @@ void BrowserWindow::updateLockIcon(const std::wstring& url) {
 }
 
 void BrowserWindow::handleUIMessage(const std::wstring& json) {
+    std::wcout << L"[C++] 收到 UI 消息: " << json << L"\n";
+
     auto findType = [&json](const std::wstring& key) -> std::wstring {
         auto pos = json.find(L"\"" + key + L"\"");
         if (pos == std::wstring::npos) return L"";
@@ -502,38 +599,88 @@ void BrowserWindow::handleUIMessage(const std::wstring& json) {
         if (pos == std::wstring::npos) return 0;
         pos = json.find(L":", pos);
         if (pos == std::wstring::npos) return 0;
+        pos++;
+        while (pos < json.size() && (json[pos] == L' ' || json[pos] == L'\t')) pos++;
+        size_t end = pos;
+        while (end < json.size() &&
+               (json[end] == L'-' || (json[end] >= L'0' && json[end] <= L'9'))) end++;
+        if (end == pos) return 0;
         try {
-            return std::stoll(json.substr(pos + 1));
+            return std::stoll(json.substr(pos, end - pos));
         } catch (...) {
             return 0;
         }
     };
 
     std::wstring type = findType(L"type");
-    std::cout << "[C++] type = " << wideToUtf8(type) << "\n";
+    if (type.empty()) {
+        std::cout << "[C++] type 为空, 忽略\n";
+        return;
+    }
+    std::wcout << L"[C++] type = " << type << L"\n";
 
     if (type == L"newTab") {
         std::cout << "[C++] 执行 createTab\n";
         createTab(L"");
+        std::cout << "[C++] createTab 返回, tabs_.count()=" << tabs_.count() << "\n";
     } else if (type == L"closeTab") {
-        closeTab(findInt(L"id"));
+        int64_t id = findInt(L"id");
+        std::cout << "[C++] closeTab id=" << id << "\n";
+        closeTab(id);
     } else if (type == L"activateTab") {
-        activateTab(findInt(L"id"));
+        int64_t id = findInt(L"id");
+        std::cout << "[C++] activateTab id=" << id << "\n";
+        activateTab(id);
     } else if (type == L"navigate") {
-        navigateActive(findType(L"url"));
+        std::wstring url = findType(L"url");
+        std::wcout << L"[C++] navigate url=" << url << L"\n";
+        auto t = tabs_.active();
+        std::cout << "[C++] active tab=" << (t ? t->id : -1)
+                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
+        navigateActive(url);
     } else if (type == L"back") {
         auto t = tabs_.active();
+        std::cout << "[C++] back, active=" << (t ? t->id : -1)
+                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
         if (t && t->webview) t->webview->GoBack();
     } else if (type == L"forward") {
         auto t = tabs_.active();
+        std::cout << "[C++] forward, active=" << (t ? t->id : -1)
+                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
         if (t && t->webview) t->webview->GoForward();
     } else if (type == L"reload") {
         auto t = tabs_.active();
+        std::cout << "[C++] reload, active=" << (t ? t->id : -1)
+                  << ", webview=" << (t && t->webview ? "yes" : "null") << "\n";
         if (t && t->webview) t->webview->Reload();
     } else if (type == L"home") {
+        std::cout << "[C++] home\n";
         navigateActive(L"dm://start");
+    } else if (type == L"star") {
+        auto t = tabs_.active();
+        std::cout << "[C++] star, active=" << (t ? t->id : -1) << "\n";
+        if (t && bookmarkStore_) {
+            std::string title = wideToUtf8(t->title);
+            if (title.empty()) title = wideToUtf8(t->url);
+            auto r = bookmarkStore_->add(title, wideToUtf8(t->url));
+            if (r.isOk()) {
+                std::cout << "[C++] 收藏成功\n";
+                syncStarStateToUI(true);
+                sendBookmarksToContent();
+            } else {
+                std::cout << "[C++] 收藏失败\n";
+            }
+        }
+    } else if (type == L"tabContextMenu") {
+        closeTab(findInt(L"id"));
+    } else if (type == L"pageContextMenu") {
+        auto t = tabs_.active();
+        if (t && t->webview) t->webview->Reload();
     } else if (type == L"uiReady") {
+        std::cout << "[C++] uiReady, 启动定时器\n";
         SetTimer(hwnd_, 1, 50, nullptr);
+    } else {
+        std::wcout << L"[C++] 未知 type: " << type << L"\n";
     }
 }
 
@@ -573,23 +720,20 @@ LRESULT CALLBACK BrowserWindow::WndProc(HWND hwnd, UINT msg,
             }
             return 0;
         }
-        case WM_SETFOCUS: {
-            if (self && self->uiController_) {
-                self->uiController_->MoveFocus(
-                    COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
-            }
-            return 0;
-        }
         case WM_TIMER: {
             if (self && wp == 1) {
                 KillTimer(hwnd, 1);
-                self->syncTabsToUI();
+                self->syncTabsToUI(true);
                 auto t = self->tabs_.active();
                 if (t) self->syncAddressToUI(t->url);
             }
             return 0;
         }
+        case WM_CLOSE:
+            std::cout << "[UI] WM_CLOSE 收到\n";
+            break;   // 继续走 DefWindowProc，触发 WM_DESTROY
         case WM_DESTROY:
+            std::cout << "[UI] WM_DESTROY 收到, 窗口将被销毁\n";
             PostQuitMessage(0);
             return 0;
     }
@@ -602,6 +746,8 @@ int BrowserWindow::run() {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    std::cout << "[UI] 消息循环退出, msg=" << msg.message
+              << ", wParam=" << msg.wParam << "\n";
     return (int)msg.wParam;
 }
 

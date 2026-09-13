@@ -82,12 +82,12 @@ Result<Framing::InvokeMessage> Framing::decodeInvoke(
         return Result<InvokeMessage>::fail(Error::internal("not an invoke"));
     size_t off = 1;
     InvokeMessage m;
-    auto r1 = getString(frame, off); if (!r1.ok()) return Result<InvokeMessage>::fail(r1.error()); m.grantId = r1.value();
-    auto r2 = getString(frame, off); if (!r2.ok()) return Result<InvokeMessage>::fail(r2.error()); m.endpoint = r2.value();
-    auto r3 = getString(frame, off); if (!r3.ok()) return Result<InvokeMessage>::fail(r3.error()); m.method = r3.value();
-    auto r4 = getString(frame, off); if (!r4.ok()) return Result<InvokeMessage>::fail(r4.error()); m.args = r4.value();
-    auto r5 = getString(frame, off); if (!r5.ok()) return Result<InvokeMessage>::fail(r5.error()); m.traceId = r5.value();
-    auto r6 = getString(frame, off); if (!r6.ok()) return Result<InvokeMessage>::fail(r6.error()); m.origin = r6.value();
+    auto r1 = getString(frame, off); if (!r1.isOk()) return Result<InvokeMessage>::fail(r1.error()); m.grantId = r1.value();
+    auto r2 = getString(frame, off); if (!r2.isOk()) return Result<InvokeMessage>::fail(r2.error()); m.endpoint = r2.value();
+    auto r3 = getString(frame, off); if (!r3.isOk()) return Result<InvokeMessage>::fail(r3.error()); m.method = r3.value();
+    auto r4 = getString(frame, off); if (!r4.isOk()) return Result<InvokeMessage>::fail(r4.error()); m.args = r4.value();
+    auto r5 = getString(frame, off); if (!r5.isOk()) return Result<InvokeMessage>::fail(r5.error()); m.traceId = r5.value();
+    auto r6 = getString(frame, off); if (!r6.isOk()) return Result<InvokeMessage>::fail(r6.error()); m.origin = r6.value();
     return Result<InvokeMessage>::ok(std::move(m));
 }
 
@@ -99,14 +99,14 @@ Result<Framing::ResultMessage> Framing::decodeResult(
     if (off >= frame.size()) return Result<ResultMessage>::fail(Error::internal("truncated"));
     ResultMessage m;
     m.ok = frame[off++] != 0;
-    auto r1 = getString(frame, off); if (!r1.ok()) return Result<ResultMessage>::fail(r1.error()); m.value = r1.value();
+    auto r1 = getString(frame, off); if (!r1.isOk()) return Result<ResultMessage>::fail(r1.error()); m.value = r1.value();
     if (off + 4 > frame.size()) return Result<ResultMessage>::fail(Error::internal("truncated code"));
     m.errorCode = static_cast<int32_t>(frame[off])
                 | (static_cast<int32_t>(frame[off + 1]) << 8)
                 | (static_cast<int32_t>(frame[off + 2]) << 16)
                 | (static_cast<int32_t>(frame[off + 3]) << 24);
     off += 4;
-    auto r2 = getString(frame, off); if (!r2.ok()) return Result<ResultMessage>::fail(r2.error()); m.errorMsg = r2.value();
+    auto r2 = getString(frame, off); if (!r2.isOk()) return Result<ResultMessage>::fail(r2.error()); m.errorMsg = r2.value();
     return Result<ResultMessage>::ok(std::move(m));
 }
 
@@ -116,7 +116,7 @@ Result<Framing::HelloMessage> Framing::decodeHello(
         return Result<HelloMessage>::fail(Error::internal("not a hello"));
     size_t off = 1;
     HelloMessage m;
-    auto r1 = getString(frame, off); if (!r1.ok()) return Result<HelloMessage>::fail(r1.error()); m.pluginId = r1.value();
+    auto r1 = getString(frame, off); if (!r1.isOk()) return Result<HelloMessage>::fail(r1.error()); m.pluginId = r1.value();
     if (off + 4 > frame.size()) return Result<HelloMessage>::fail(Error::internal("truncated pid"));
     m.pid = static_cast<int32_t>(frame[off])
           | (static_cast<int32_t>(frame[off + 1]) << 8)
@@ -136,13 +136,13 @@ Result<bool> Framing::writeFrame(Pipe& pipe,
     frame.insert(frame.end(), payload.begin(), payload.end());
 
     auto r = pipe.write(frame);
-    if (!r.ok()) return Result<bool>::fail(r.error());
+    if (!r.isOk()) return Result<bool>::fail(r.error());
     return Result<bool>::ok(true);
 }
 
 Result<std::vector<uint8_t>> Framing::readFrame(Pipe& pipe) {
     auto header = pipe.read(4);
-    if (!header.ok()) return Result<std::vector<uint8_t>>::fail(header.error());
+    if (!header.isOk()) return Result<std::vector<uint8_t>>::fail(header.error());
     if (header.value().size() != 4)
         return Result<std::vector<uint8_t>>::fail(Error::internal("short header"));
 
@@ -154,7 +154,7 @@ Result<std::vector<uint8_t>> Framing::readFrame(Pipe& pipe) {
         return Result<std::vector<uint8_t>>::fail(Error::internal("bad frame length"));
 
     auto body = pipe.read(len);
-    if (!body.ok()) return Result<std::vector<uint8_t>>::fail(body.error());
+    if (!body.isOk()) return Result<std::vector<uint8_t>>::fail(body.error());
     if (body.value().size() != len)
         return Result<std::vector<uint8_t>>::fail(Error::internal("short body"));
     return Result<std::vector<uint8_t>>::ok(std::move(body.value()));

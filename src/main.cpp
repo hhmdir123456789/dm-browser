@@ -54,7 +54,7 @@ public:
     Result<bool> boot(const std::string& dbPath) {
         int64_t t0 = nowMs();
         auto r = db_.open(dbPath);
-        if (!r.ok()) return r;
+        if (!r.isOk()) return r;
         if (!createSchema())
             return Result<bool>::fail(Error::db("schema creation failed"));
         registerHandlers();
@@ -96,7 +96,7 @@ public:
     Result<dm::ProcessInfo> spawnPluginHost(const std::string& pluginId,
                                             bool sensitive) {
         auto r = pm_.spawnPluginHost(pluginId, sensitive, "dm_plugin_host.exe");
-        if (!r.ok()) return r;
+        if (!r.isOk()) return r;
         auto policy = sensitive ? dm::Sandbox::sensitiveUtilityPolicy()
                                 : dm::Sandbox::defaultUtilityPolicy();
         sandbox_.apply(r.value().pid, policy);
@@ -141,7 +141,7 @@ private:
         };
         for (const char* s : stmts) {
             auto r = db_.exec(s);
-            if (!r.ok()) return false;
+            if (!r.isOk()) return false;
         }
         return true;
     }
@@ -153,7 +153,7 @@ private:
                 auto pos = e.args.find('|');
                 auto res = bookmarks_.add(e.args.substr(0, pos),
                                           e.args.substr(pos + 1));
-                if (!res.ok()) { r.ok = false; r.error = res.error(); return r; }
+                if (!res.isOk()) { r.ok = false; r.error = res.error(); return r; }
                 r.ok = true; r.value = std::to_string(res.value());
             } else if (e.method == "list") {
                 r.ok = true; r.value = "[...]";
@@ -166,7 +166,7 @@ private:
                 auto pos = e.args.find('|');
                 auto res = downloads_.create(e.args.substr(0, pos),
                                              e.args.substr(pos + 1));
-                if (!res.ok()) { r.ok = false; r.error = res.error(); return r; }
+                if (!res.isOk()) { r.ok = false; r.error = res.error(); return r; }
                 r.ok = true; r.value = std::to_string(res.value());
             } else { r.ok = false; r.error = Error::internal("unknown"); }
             return r;
@@ -203,7 +203,7 @@ private:
             TabId tab = std::stoi(e.args.substr(0, pos));
             auto res = injector_.inject(tab, e.origin, e.args.substr(pos + 1),
                                         InjectTiming::DocumentEnd);
-            if (!res.ok()) { r.ok = false; r.error = res.error(); return r; }
+            if (!res.isOk()) { r.ok = false; r.error = res.error(); return r; }
             r.ok = true; r.value = "injected";
             return r;
         });
@@ -267,8 +267,8 @@ int main() {
 
         DMBrowser browser;
         auto bootResult = browser.boot("dm_browser_test.db");
-        check(bootResult.ok(), "内核启动成功");
-        if (!bootResult.ok()) {
+        check(bootResult.isOk(), "内核启动成功");
+        if (!bootResult.isOk()) {
             std::cout << "  错误: " << bootResult.error().msg << "\n";
             return 1;
         }
@@ -328,7 +328,7 @@ int main() {
         std::string pl1 = p1.pluginId + "@" + p1.version;
         p1.signature = SignatureVerifier::makeSignature(p1.keyId, pl1);
         auto m1 = browser.market().publish(p1, pl1);
-        check(m1.ok(), "官方插件上架成功");
+        check(m1.isOk(), "官方插件上架成功");
         check(browser.market().get("dm.official.bm")->tier == MarketTier::Official,
               "层级为 Official");
         MarketPlugin p2;
@@ -337,12 +337,12 @@ int main() {
         p2.version = "0.1.0";
         p2.endpoints = {"OSInfo"};
         auto m2 = browser.market().publish(p2, "");
-        check(m2.ok(), "未签名插件上架成功");
+        check(m2.isOk(), "未签名插件上架成功");
         check(browser.market().get("dm.unsigned.theme")->tier == MarketTier::Unsigned,
               "层级为 Unsigned");
         check(browser.market().withdraw("dm.unsigned.theme"), "撤回成功");
         auto m3 = browser.market().publish(p2, "");
-        check(!m3.ok(), "撤回后重新上架被拒");
+        check(!m3.isOk(), "撤回后重新上架被拒");
 
         std::cout << "\n--- 里程碑 5: 企业策略 + LTS ---\n";
         EnterprisePolicyData policyData;
@@ -352,7 +352,7 @@ int main() {
         policyData.auditRetentionDays = 30;
         std::string adminSig = EnterprisePolicy::makeAdminSignature("admin-key", policyData);
         auto pr = browser.policy().load(policyData, "admin-key", adminSig);
-        check(pr.ok(), "企业策略加载成功");
+        check(pr.isOk(), "企业策略加载成功");
         check(browser.policy().isWhitelisted("dm.official.bm"), "白名单内");
         check(!browser.policy().isWhitelisted("dm.evil"), "白名单外");
         ReleaseInfo lts1;
@@ -388,7 +388,7 @@ int main() {
         auto tally = browser.council().tally("d-001");
         check(tally.first == 2 && tally.second == 1, "投票统计 2:1");
         auto c1 = browser.disputes().report("dm.official.bm", "user-1", "疑似数据收集");
-        check(c1.ok(), "提交争议");
+        check(c1.isOk(), "提交争议");
         browser.disputes().investigate(c1.value());
         browser.disputes().resolve(c1.value(), DisputeRuling::Warning, "警告");
         browser.disputes().appeal(c1.value(), "已整改");
@@ -435,7 +435,7 @@ int main() {
 
         DMBrowser browser2;
         auto boot2 = browser2.boot("dm_browser_test.db");
-        check(boot2.ok(), "第二次启动成功");
+        check(boot2.isOk(), "第二次启动成功");
         check(browser2.bookmarks().size() == bookmarkCount,
               "重启后书签数不变 (" + std::to_string(bookmarkCount) + ")");
         check(browser2.downloads().size() == downloadCount,
@@ -450,14 +450,14 @@ int main() {
 
         std::cout << "\n--- A+B: 跨进程 IPC ---\n";
         auto spawn = browser.spawnPluginHost("dm.test.plugin", false);
-        check(spawn.ok(), "启动插件宿主进程");
-        if (spawn.ok()) {
+        check(spawn.isOk(), "启动插件宿主进程");
+        if (spawn.isOk()) {
             auto info = spawn.value();
             check(info.pid > 0, "进程 PID > 0");
             check(browser.processManager().isAlive(info.pid), "进程存活");
 
             auto srv = browser.broker().startServerFor(info.pid, info.pipeName);
-            check(srv.ok(), "创建管道服务端");
+            check(srv.isOk(), "创建管道服务端");
 
             std::this_thread::sleep_for(std::chrono::milliseconds(800));
 
@@ -465,7 +465,7 @@ int main() {
                   "睡眠后插件进程仍存活");
 
             auto wait = browser.broker().waitForPlugin(info.pid);
-            check(wait.ok(), "插件已连接管道");
+            check(wait.isOk(), "插件已连接管道");
 
             InvokeEnvelope env;
             env.grantId = browser.grants().grant("dm.test.plugin", "Ping");
@@ -493,17 +493,17 @@ int main() {
         // ============================================================
         std::cout << "\n--- 插件热加载 ---\n";
         auto spawnHL = browser.spawnPluginHost("dm.hotload.test", false);
-        check(spawnHL.ok(), "启动热加载测试进程");
-        if (spawnHL.ok()) {
+        check(spawnHL.isOk(), "启动热加载测试进程");
+        if (spawnHL.isOk()) {
             auto hlInfo = spawnHL.value();
 
             auto srvHL = browser.broker().startServerFor(hlInfo.pid, hlInfo.pipeName);
-            check(srvHL.ok(), "创建热加载管道");
+            check(srvHL.isOk(), "创建热加载管道");
 
             std::this_thread::sleep_for(std::chrono::milliseconds(800));
 
             auto waitHL = browser.broker().waitForPlugin(hlInfo.pid);
-            check(waitHL.ok(), "热加载插件已连接");
+            check(waitHL.isOk(), "热加载插件已连接");
 
             // 1. 调用 greet
             InvokeEnvelope env1;
@@ -559,8 +559,8 @@ int main() {
 
         std::cout << "\n--- A+B: 沙箱 ---\n";
         auto sandboxResult = browser.spawnPluginHost("dm.sandbox.test", true);
-        check(sandboxResult.ok(), "敏感插件进程启动");
-        if (sandboxResult.ok()) {
+        check(sandboxResult.isOk(), "敏感插件进程启动");
+        if (sandboxResult.isOk()) {
             check(browser.processManager().isSensitive(sandboxResult.value().pid),
                   "标记为敏感进程");
             browser.processManager().terminate(sandboxResult.value().pid);

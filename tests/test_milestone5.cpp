@@ -14,6 +14,6 @@ TEST(M5_PolicyLoad) {
     d.mirrorUrl = "https://mirror.dm";
     std::string sig = EnterprisePolicy::makeAdminSignature("admin", d);
     auto r = p.load(d, "admin", sig);
-    EXPECT_TRUE(r.ok());
+    EXPECT_TRUE(r.isOk());
     EXPECT_TRUE(p.isLoaded());
 }
