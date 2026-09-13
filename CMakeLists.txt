@@ -179,8 +179,8 @@ add_executable(dm_learn
     src/learn/learn_main.cpp
     src/learn/learn_store.cpp
     # 以下两个文件还没创建，暂时注释，等创建后取消注释
-    # src/learn/snapshot_parser.cpp
-    # src/learn/multi_compare.cpp
+    src/learn/snapshot_parser.cpp
+    src/learn/multi_compare.cpp
     src/db/Database.cpp
 )
 target_include_directories(dm_learn PRIVATE

@@ -1,10 +1,14 @@
 #include <windows.h>
 #include "learn/learn_store.h"
+#include "learn/snapshot_parser.h"
+#include "learn/multi_compare.h"
 #include "db/Database.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <set>
+#include <algorithm>
 
 using namespace dm::learn;
 
@@ -27,6 +31,9 @@ static void printUsage() {
     std::cout << "  dm_learn features                        特性统计\n";
     std::cout << "  dm_learn diffs                           最近差异\n";
     std::cout << "  dm_learn seed                            插入演示数据\n";
+    std::cout << "  dm_learn dump                            生成示例快照\n";
+    std::cout << "  dm_learn compare <ref.json> <dm.json>    多维对比\n";
+    std::cout << "  dm_learn infer <ref.json> <dm.json>      推断缺失特性\n";
     std::cout << "\n状态值: pending / analyzed / fixed / ignored\n";
 }
 
@@ -106,6 +113,40 @@ static void seedDemo(LearnStore& store) {
     }
     store.recalcPriorities();
     std::cout << "\n完成。\n";
+}
+
+static void dumpDemoSnapshot() {
+    PageSnapshot s;
+    s.url = "https://demo.local/";
+    s.title = "Demo";
+    s.viewportWidth = 800;
+    s.viewportHeight = 600;
+
+    NodeSnapshot n1;
+    n1.path = "html>body>div.0";
+    n1.tag = "div";
+    n1.className = "container";
+    n1.style.display = "flex";
+    n1.style.color = "0,0,0";
+    n1.style.fontSize = "16px";
+    n1.style.backgroundColor = "255,255,255";
+    n1.layout = {0, 0, 800, 100};
+    s.nodes.push_back(n1);
+
+    NodeSnapshot n2;
+    n2.path = "html>body>div.0>p.0";
+    n2.tag = "p";
+    n2.textPreview = "Hello";
+    n2.style.display = "block";
+    n2.style.color = "0,0,0";
+    n2.style.fontSize = "16px";
+    n2.layout = {10, 10, 100, 20};
+    s.nodes.push_back(n2);
+
+    std::ofstream out("snapshot_ref.json");
+    out << serializeSnapshot(s);
+    std::cout << "已生成 snapshot_ref.json ("
+              << s.nodes.size() << " 个节点)\n";
 }
 
 int main(int argc, char** argv) {
@@ -216,6 +257,91 @@ int main(int argc, char** argv) {
     }
     else if (cmd == "seed") {
         seedDemo(store);
+    }
+    else if (cmd == "dump") {
+        dumpDemoSnapshot();
+    }
+    else if (cmd == "compare" && argc > 3) {
+        auto ref = parseSnapshotFile(argv[2]);
+        auto dm  = parseSnapshotFile(argv[3]);
+        if (ref.nodes.empty() || dm.nodes.empty()) {
+            std::cout << "无法读取快照文件\n";
+            return 1;
+        }
+        auto result = MultiCompare::compare(ref, dm);
+
+        std::cout << "=== 多维对比 ===\n";
+        std::cout << "URL: " << result.url << "\n";
+        std::cout << "结构相似度: " << (int)(result.structuralScore * 100) << "%\n";
+        std::cout << "样式相似度: " << (int)(result.styleScore * 100) << "%\n";
+        std::cout << "布局相似度: " << (int)(result.layoutScore * 100) << "%\n";
+        std::cout << "差异总数: " << result.diffs.size() << "\n";
+        std::cout << "  - 结构: " << result.structuralDiffCount << "\n";
+        std::cout << "  - 样式: " << result.styleDiffCount << "\n";
+        std::cout << "  - 布局: " << result.layoutDiffCount << "\n\n";
+
+        std::cout << "差异明细（按严重程度）：\n";
+        auto sorted = result.diffs;
+        std::sort(sorted.begin(), sorted.end(),
+            [](const DimDiff& a, const DimDiff& b) {
+                return a.severity > b.severity;
+            });
+        int n = 0;
+        for (auto& d : sorted) {
+            if (n++ >= 20) break;
+            std::cout << "  [" << d.severity << "] "
+                      << d.dimension << " / " << d.category << "\n";
+            std::cout << "      " << d.path << "\n";
+            std::cout << "      " << d.property << ": "
+                      << d.refValue << " -> " << d.dmValue << "\n";
+        }
+    }
+    else if (cmd == "infer" && argc > 3) {
+        auto ref = parseSnapshotFile(argv[2]);
+        auto dm  = parseSnapshotFile(argv[3]);
+        auto result = MultiCompare::compare(ref, dm);
+
+        std::set<std::string> feats;
+        for (auto& d : result.diffs) {
+            if (d.dimension == "style") {
+                if (d.property == "display") {
+                    if (d.refValue.find("flex") != std::string::npos)
+                        feats.insert("display:flex");
+                    else if (d.refValue.find("grid") != std::string::npos)
+                        feats.insert("display:grid");
+                    else if (d.refValue.find("inline-block") != std::string::npos)
+                        feats.insert("display:inline-block");
+                }
+                if (d.property == "position") {
+                    if (d.refValue == "absolute")  feats.insert("position:absolute");
+                    if (d.refValue == "fixed")     feats.insert("position:fixed");
+                    if (d.refValue == "relative")  feats.insert("position:relative");
+                }
+                if (d.property == "fontSize")  feats.insert("font-size");
+                if (d.property == "color")     feats.insert("color");
+                if (d.property == "backgroundColor")
+                    feats.insert("background-color");
+            }
+            if (d.dimension == "layout") {
+                if (d.property == "width")  feats.insert("width:auto");
+                if (d.property == "height") feats.insert("height:auto");
+            }
+            if (d.dimension == "structural" &&
+                d.category == "missing_node") {
+                feats.insert("node:" + d.refValue);
+            }
+        }
+
+        std::cout << "=== 推断缺失特性 ===\n";
+        if (feats.empty()) {
+            std::cout << "  (无)\n";
+        } else {
+            for (auto& f : feats) {
+                std::cout << "  - " << f << "\n";
+                store.recordFeature(f, false);
+            }
+            store.recalcPriorities();
+        }
     }
     else {
         printUsage();
