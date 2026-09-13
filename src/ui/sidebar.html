@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:,">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body {
@@ -11,11 +12,16 @@
     background:#f5f7fa; color:#333;
     user-select:none;
   }
+  body {
+    display:flex;
+    flex-direction:column;
+  }
 
   .header {
     display:flex; align-items:center; height:40px;
     padding:0 8px; background:#e8ecf0;
     gap:4px; border-bottom:1px solid #d0d5dc;
+    flex-shrink:0;
   }
   .header .tab {
     padding:6px 12px; border-radius:6px; cursor:pointer;
@@ -25,7 +31,7 @@
   .header .tab.active { background:#fff; color:#000; box-shadow:0 1px 2px rgba(0,0,0,0.05); }
   .header .close {
     margin-left:auto; padding:4px 10px; border-radius:6px;
-    cursor:pointer; color:#888; font-size:14px;
+    cursor:pointer; color:#888; font-size:16px; line-height:1;
   }
   .header .close:hover { background:#e74c3c; color:#fff; }
 
@@ -37,15 +43,34 @@
   .status.ok { color:#2e8b57; }
   .status.err { color:#c0392b; }
 
+  .settings-bar {
+    padding:4px 12px; background:#e8ecf0;
+    display:flex; align-items:center; gap:8px;
+    border-bottom:1px solid #d0d5dc; flex-shrink:0;
+  }
+  .settings-bar select, .settings-bar input {
+    background:#fff; border:1px solid #d0d5dc;
+    border-radius:4px; padding:3px 6px; color:#333;
+    font-size:11px; font-family:inherit;
+  }
+  .settings-bar label { font-size:11px; color:#888; }
+  .settings-bar button {
+    padding:3px 8px; background:#fff; border:1px solid #d0d5dc;
+    color:#333; border-radius:4px; cursor:pointer; font-size:11px;
+  }
+  .settings-bar button:hover { background:#f0f4f8; }
+
+  /* 面板：flex 撑满剩余高度（关键修复） */
   .panel {
     display:none;
-    height: calc(100% - 40px - 26px);
-    flex-direction:column;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
   }
   .panel.active { display:flex; }
 
   /* AI 对话 */
-  .chat { flex:1; overflow-y:auto; padding:12px; }
+  .chat { flex:1; overflow-y:auto; padding:12px; min-height:0; }
   .msg {
     margin-bottom:12px; padding:8px 12px; border-radius:8px;
     white-space:pre-wrap; word-wrap:break-word;
@@ -75,11 +100,8 @@
     cursor:pointer; font-size:13px;
   }
   .chat-input-bar button:hover { background:#3a7bc8; }
-  .chat-input-bar button:disabled {
-    background:#c4c9d0; color:#888; cursor:default;
-  }
 
-  .list { padding:8px; flex:1; overflow-y:auto; }
+  .list { padding:8px; flex:1; overflow-y:auto; min-height:0; }
   .list-item {
     padding:10px 12px; border-radius:6px; cursor:pointer;
     margin-bottom:4px; border-left:3px solid transparent;
@@ -101,23 +123,6 @@
   .empty .hint {
     font-size:11px; color:#bbb; margin-top:8px; display:block;
   }
-
-  .settings-bar {
-    padding:4px 12px; background:#e8ecf0;
-    display:flex; align-items:center; gap:8px;
-    border-bottom:1px solid #d0d5dc; flex-shrink:0;
-  }
-  .settings-bar select, .settings-bar input {
-    background:#fff; border:1px solid #d0d5dc;
-    border-radius:4px; padding:3px 6px; color:#333;
-    font-size:11px; font-family:inherit;
-  }
-  .settings-bar label { font-size:11px; color:#888; }
-  .settings-bar button {
-    padding:3px 8px; background:#fff; border:1px solid #d0d5dc;
-    color:#333; border-radius:4px; cursor:pointer; font-size:11px;
-  }
-  .settings-bar button:hover { background:#f0f4f8; }
 </style>
 </head>
 <body>
@@ -134,7 +139,6 @@
     <label>模型</label>
     <select id="modelSelect">
       <option value="qwen2.5:7b">qwen2.5:7b</option>
-      <option value="gemma2">gemma2</option>
     </select>
     <button id="refreshBtn">检测</button>
   </div>
@@ -331,8 +335,7 @@
     });
   }
 
-  // 启动时检测 Ollama
-  // 启动时检测 Ollama（等 chrome.webview 就绪）
+  // ===== 启动：等 chrome.webview 就绪后检测 Ollama =====
   function tryCheckOllama(retries) {
     if (window.chrome && window.chrome.webview) {
       console.log('[Sidebar] chrome.webview 就绪，发送 checkOllama');
