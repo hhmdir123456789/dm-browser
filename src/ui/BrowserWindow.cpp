@@ -294,7 +294,7 @@ BrowserWindow::~BrowserWindow() {
 bool BrowserWindow::create(const std::wstring& title, int w, int h) {
     width_ = w; height_ = h;
 
-    std::string dbPath = getExeDir() + "dm_ui.db";
+    std::string dbPath = getExeDir() + "dm_browser.db";
     auto r = db_.open(dbPath);
     if (r.isOk()) {
         db_.exec("CREATE TABLE IF NOT EXISTS bookmarks ("

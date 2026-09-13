@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
 
     Database db;
-    auto r = db.open("dm_learn.db");
+    auto r = db.open("dm_browser.db");
     if (!r.isOk()) {
         std::cerr << "打开学习库失败: " << r.error().msg << "\n";
         return 1;
