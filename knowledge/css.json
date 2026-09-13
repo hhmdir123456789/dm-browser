@@ -1,0 +1,266 @@
+{
+  "category": "css",
+  "version": "1.0",
+  "entries": [
+    {
+      "id": "css.display.block",
+      "category": "css",
+      "name": "display: block",
+      "summary": "块级元素，独占一行，可设置宽高",
+      "syntax": "display: block;",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.display.inline",
+      "category": "css",
+      "name": "display: inline",
+      "summary": "行内元素，不独占行，宽高无效",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.display.inline-block",
+      "category": "css",
+      "name": "display: inline-block",
+      "summary": "行内块，不独占行但可设置宽高",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["display:inline-block"]
+    },
+    {
+      "id": "css.display.flex",
+      "category": "css",
+      "name": "display: flex",
+      "spec_url": "https://www.w3.org/TR/css-flexbox-1/",
+      "summary": "弹性布局，子元素沿主轴排列",
+      "syntax": "display: flex; gap: 10px;",
+      "examples": [
+        "<div style='display:flex'><div>A</div><div>B</div></div>"
+      ],
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["display:flex", "flex"]
+    },
+    {
+      "id": "css.display.grid",
+      "category": "css",
+      "name": "display: grid",
+      "spec_url": "https://www.w3.org/TR/css-grid-1/",
+      "summary": "网格布局，二维排列",
+      "implemented": false,
+      "difficulty": 5,
+      "related_features": ["display:grid", "grid"]
+    },
+    {
+      "id": "css.display.none",
+      "category": "css",
+      "name": "display: none",
+      "summary": "元素不显示，不占位置",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.position.static",
+      "category": "css",
+      "name": "position: static",
+      "summary": "默认值，正常文档流",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.position.relative",
+      "category": "css",
+      "name": "position: relative",
+      "summary": "相对定位，相对自身原位置偏移",
+      "syntax": "position: relative; top: 10px; left: 20px;",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["position:relative"]
+    },
+    {
+      "id": "css.position.absolute",
+      "category": "css",
+      "name": "position: absolute",
+      "summary": "绝对定位，相对最近的非 static 祖先",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["position:absolute"]
+    },
+    {
+      "id": "css.position.fixed",
+      "category": "css",
+      "name": "position: fixed",
+      "summary": "固定定位，相对视口，滚动不动",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["position:fixed"]
+    },
+    {
+      "id": "css.color",
+      "category": "css",
+      "name": "color",
+      "summary": "文字颜色",
+      "syntax": "color: red; color: #ff0000; color: rgb(255,0,0);",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.background-color",
+      "category": "css",
+      "name": "background-color",
+      "summary": "背景颜色",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.font-size",
+      "category": "css",
+      "name": "font-size",
+      "summary": "字体大小",
+      "values": ["12px", "14px", "16px", "18px", "24px", "32px"],
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.font-weight",
+      "category": "css",
+      "name": "font-weight",
+      "summary": "字重",
+      "values": ["normal", "bold", "100", "400", "700"],
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.font-style",
+      "category": "css",
+      "name": "font-style",
+      "summary": "斜体",
+      "values": ["normal", "italic"],
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.text-decoration",
+      "category": "css",
+      "name": "text-decoration",
+      "summary": "文本装饰（下划线）",
+      "values": ["none", "underline", "line-through"],
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.margin",
+      "category": "css",
+      "name": "margin",
+      "summary": "外边距",
+      "syntax": "margin: 10px; margin-top: 5px;",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.padding",
+      "category": "css",
+      "name": "padding",
+      "summary": "内边距",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.border",
+      "category": "css",
+      "name": "border",
+      "summary": "边框",
+      "syntax": "border: 1px solid #ccc;",
+      "implemented": false,
+      "difficulty": 2,
+      "related_features": ["border"]
+    },
+    {
+      "id": "css.border-radius",
+      "category": "css",
+      "name": "border-radius",
+      "summary": "圆角",
+      "syntax": "border-radius: 8px;",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["border-radius"]
+    },
+    {
+      "id": "css.text-align",
+      "category": "css",
+      "name": "text-align",
+      "summary": "文本水平对齐",
+      "values": ["left", "center", "right", "justify"],
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "css.width",
+      "category": "css",
+      "name": "width",
+      "summary": "宽度",
+      "syntax": "width: 100px; width: 50%; width: auto;",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["width:auto", "width"]
+    },
+    {
+      "id": "css.height",
+      "category": "css",
+      "name": "height",
+      "summary": "高度",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["height:auto", "height"]
+    },
+    {
+      "id": "css.z-index",
+      "category": "css",
+      "name": "z-index",
+      "summary": "层叠顺序，需配合 position 使用",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["z-index"]
+    },
+    {
+      "id": "css.overflow",
+      "category": "css",
+      "name": "overflow",
+      "summary": "内容溢出处理",
+      "values": ["visible", "hidden", "scroll", "auto"],
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["overflow"]
+    },
+    {
+      "id": "css.box-shadow",
+      "category": "css",
+      "name": "box-shadow",
+      "summary": "盒子阴影",
+      "syntax": "box-shadow: 0 2px 4px rgba(0,0,0,0.1);",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["box-shadow"]
+    },
+    {
+      "id": "css.transform",
+      "category": "css",
+      "name": "transform",
+      "summary": "2D/3D 变换",
+      "syntax": "transform: translate(10px, 20px) rotate(45deg);",
+      "implemented": false,
+      "difficulty": 5,
+      "related_features": ["transform"]
+    },
+    {
+      "id": "css.transition",
+      "category": "css",
+      "name": "transition",
+      "summary": "过渡动画",
+      "implemented": false,
+      "difficulty": 5,
+      "related_features": ["transition"]
+    }
+  ]
+}

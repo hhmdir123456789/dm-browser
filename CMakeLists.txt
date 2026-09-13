@@ -123,6 +123,59 @@ target_link_libraries(dm_tests PRIVATE sqlite3)
 target_compile_options(dm_tests PRIVATE /W3 /utf-8)
 
 # ============================================================
+# dm_render_test — 自研渲染引擎测试程序
+# 暂时注释：等 src/render/ 下的文件全部创建后再启用
+# ============================================================
+# if(WIN32)
+#     add_executable(dm_render_test
+#         src/render/main.cpp
+#         src/render/html_parser.cpp
+#         src/render/css_parser.cpp
+#         src/render/renderer.cpp
+#         src/render/render_window.cpp
+#         src/render/js_lite.cpp
+#         src/render/ai_bridge.cpp
+#     )
+#     target_include_directories(dm_render_test PRIVATE src)
+#     target_compile_options(dm_render_test PRIVATE /W3 /utf-8)
+#     target_link_libraries(dm_render_test PRIVATE user32 gdi32 gdiplus winhttp)
+# endif()
+
+# ============================================================
+# dm_kb — 知识库工具
+# ============================================================
+add_executable(dm_kb
+    src/knowledge/kb_main.cpp
+    src/knowledge/knowledge_base.cpp
+)
+target_include_directories(dm_kb PRIVATE
+    src
+    src/knowledge
+    third_party
+    third_party/nlohmann
+)
+
+
+
+target_compile_options(dm_kb PRIVATE /W3 /utf-8)
+target_link_libraries(dm_kb PRIVATE user32)
+
+add_custom_command(TARGET dm_kb POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:dm_kb>/knowledge"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/knowledge/html.json"
+        "$<TARGET_FILE_DIR:dm_kb>/knowledge/html.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/knowledge/css.json"
+        "$<TARGET_FILE_DIR:dm_kb>/knowledge/css.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/knowledge/js.json"
+        "$<TARGET_FILE_DIR:dm_kb>/knowledge/js.json"
+    COMMENT "复制知识库到输出目录"
+)
+
+# ============================================================
 # 安装规则
 # ============================================================
 install(TARGETS dm_browser dm_plugin_host dm_tests dm_ui example_plugin
@@ -138,7 +191,7 @@ install(FILES
 # ============================================================
 set(CPACK_GENERATOR "ZIP")
 set(CPACK_PACKAGE_NAME "dm-browser")
-set(CPACK_PACKAGE_VERSION "0.1.0")
+set(CPACK_PACKAGE_VERSION "0.3.0")
 set(CPACK_PACKAGE_DESCRIPTION "大明DM浏览器")
 set(CPACK_PACKAGE_FILE_NAME "dm-browser-${CPACK_PACKAGE_VERSION}-win64")
 include(CPack)

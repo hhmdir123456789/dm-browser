@@ -1,0 +1,192 @@
+{
+  "category": "js",
+  "version": "1.0",
+  "entries": [
+    {
+      "id": "js.api.getElementById",
+      "category": "js",
+      "name": "document.getElementById",
+      "summary": "按 id 查找元素",
+      "syntax": "document.getElementById('myId')",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "js.api.querySelector",
+      "category": "js",
+      "name": "document.querySelector",
+      "summary": "按 CSS 选择器查找首个匹配元素",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["querySelector"]
+    },
+    {
+      "id": "js.api.querySelectorAll",
+      "category": "js",
+      "name": "document.querySelectorAll",
+      "summary": "按 CSS 选择器查找所有匹配元素",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["querySelectorAll"]
+    },
+    {
+      "id": "js.prop.innerText",
+      "category": "js",
+      "name": "element.innerText",
+      "summary": "读写元素文本（保留样式）",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "js.prop.textContent",
+      "category": "js",
+      "name": "element.textContent",
+      "summary": "读写元素文本（含隐藏内容）",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "js.prop.innerHTML",
+      "category": "js",
+      "name": "element.innerHTML",
+      "summary": "读写元素 HTML",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["innerHTML"]
+    },
+    {
+      "id": "js.event.addEventListener",
+      "category": "js",
+      "name": "addEventListener",
+      "summary": "绑定事件监听器",
+      "syntax": "el.addEventListener('click', fn)",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["addEventListener"]
+    },
+    {
+      "id": "js.event.onclick",
+      "category": "js",
+      "name": "element.onclick",
+      "summary": "点击事件属性",
+      "implemented": true,
+      "difficulty": 2
+    },
+    {
+      "id": "js.api.classList",
+      "category": "js",
+      "name": "element.classList",
+      "summary": "元素类名集合操作",
+      "syntax": "el.classList.add('active')",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["classList"]
+    },
+    {
+      "id": "js.api.setAttribute",
+      "category": "js",
+      "name": "element.setAttribute",
+      "summary": "设置属性",
+      "implemented": false,
+      "difficulty": 2,
+      "related_features": ["setAttribute"]
+    },
+    {
+      "id": "js.api.getAttribute",
+      "category": "js",
+      "name": "element.getAttribute",
+      "summary": "读取属性",
+      "implemented": false,
+      "difficulty": 2,
+      "related_features": ["getAttribute"]
+    },
+    {
+      "id": "js.api.console.log",
+      "category": "js",
+      "name": "console.log",
+      "summary": "控制台输出",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "js.api.setTimeout",
+      "category": "js",
+      "name": "setTimeout",
+      "summary": "延迟执行",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["setTimeout"]
+    },
+    {
+      "id": "js.api.setInterval",
+      "category": "js",
+      "name": "setInterval",
+      "summary": "定时执行",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["setInterval"]
+    },
+    {
+      "id": "js.api.JSON.parse",
+      "category": "js",
+      "name": "JSON.parse",
+      "summary": "JSON 字符串转对象",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["JSON"]
+    },
+    {
+      "id": "js.api.JSON.stringify",
+      "category": "js",
+      "name": "JSON.stringify",
+      "summary": "对象转 JSON 字符串",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["JSON"]
+    },
+    {
+      "id": "js.api.fetch",
+      "category": "js",
+      "name": "fetch",
+      "summary": "发起网络请求",
+      "implemented": false,
+      "difficulty": 5,
+      "related_features": ["fetch"]
+    },
+    {
+      "id": "js.syntax.var",
+      "category": "js",
+      "name": "变量声明",
+      "summary": "var / let / const",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "js.syntax.function",
+      "category": "js",
+      "name": "函数定义",
+      "summary": "function 声明和调用",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["function"]
+    },
+    {
+      "id": "js.syntax.if",
+      "category": "js",
+      "name": "if 条件",
+      "summary": "条件分支",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["if"]
+    },
+    {
+      "id": "js.syntax.for",
+      "category": "js",
+      "name": "for 循环",
+      "summary": "循环",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["for"]
+    }
+  ]
+}

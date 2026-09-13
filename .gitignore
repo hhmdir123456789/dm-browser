@@ -6,3 +6,10 @@
 *.pdb
 *.obj
 .vs/
+build/
+*.db
+*.exe
+*.dll
+*.lib
+*.obj
+third_party/nlohmann/json.hpp

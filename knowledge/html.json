@@ -1,0 +1,113 @@
+{
+  "category": "html",
+  "version": "1.0",
+  "entries": [
+    {
+      "id": "html.tag.h1",
+      "category": "html",
+      "name": "<h1> 一级标题",
+      "spec_url": "https://developer.mozilla.org/zh-CN/docs/Web/HTML/Element/Heading_Elements",
+      "summary": "页面主标题，默认字号最大且加粗",
+      "syntax": "<h1>标题</h1>",
+      "examples": ["<h1>大明DM</h1>"],
+      "implemented": true,
+      "related_code": ["src/render/html_parser.cpp:applyDefaultStyle"],
+      "difficulty": 1
+    },
+    {
+      "id": "html.tag.p",
+      "category": "html",
+      "name": "<p> 段落",
+      "summary": "段落文本，默认有上下边距",
+      "syntax": "<p>段落</p>",
+      "implemented": true,
+      "related_code": ["src/render/html_parser.cpp:applyDefaultStyle"],
+      "difficulty": 1
+    },
+    {
+      "id": "html.tag.div",
+      "category": "html",
+      "name": "<div> 块级容器",
+      "summary": "通用块级容器",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "html.tag.span",
+      "category": "html",
+      "name": "<span> 行内容器",
+      "summary": "通用行内容器",
+      "implemented": true,
+      "difficulty": 1
+    },
+    {
+      "id": "html.tag.a",
+      "category": "html",
+      "name": "<a> 链接",
+      "summary": "超链接，href 属性指定目标",
+      "syntax": "<a href='url'>文本</a>",
+      "implemented": true,
+      "difficulty": 2
+    },
+    {
+      "id": "html.tag.img",
+      "category": "html",
+      "name": "<img> 图片",
+      "summary": "嵌入图片，src 指定路径",
+      "syntax": "<img src='path.png' width='100' height='80'>",
+      "implemented": true,
+      "difficulty": 2
+    },
+    {
+      "id": "html.tag.ul",
+      "category": "html",
+      "name": "<ul> 无序列表",
+      "summary": "无序列表，子元素为 <li>",
+      "implemented": true,
+      "difficulty": 2
+    },
+    {
+      "id": "html.tag.ol",
+      "category": "html",
+      "name": "<ol> 有序列表",
+      "summary": "有序列表，子元素为 <li>",
+      "implemented": true,
+      "difficulty": 2
+    },
+    {
+      "id": "html.tag.table",
+      "category": "html",
+      "name": "<table> 表格",
+      "summary": "表格，含 tr/td/th",
+      "implemented": true,
+      "difficulty": 3
+    },
+    {
+      "id": "html.tag.form",
+      "category": "html",
+      "name": "<form> 表单",
+      "summary": "表单容器",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["form"]
+    },
+    {
+      "id": "html.tag.input",
+      "category": "html",
+      "name": "<input> 输入框",
+      "summary": "单行输入控件",
+      "implemented": false,
+      "difficulty": 4,
+      "related_features": ["input"]
+    },
+    {
+      "id": "html.tag.button",
+      "category": "html",
+      "name": "<button> 按钮",
+      "summary": "可点击按钮",
+      "implemented": false,
+      "difficulty": 3,
+      "related_features": ["button"]
+    }
+  ]
+}
