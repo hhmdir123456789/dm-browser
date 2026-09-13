@@ -17,3 +17,9 @@ third_party/nlohmann/json.hpp
 
 render.json
 *.snapshot.json
+
+# Build artifacts
+render.json
+*.snapshot.json
+*.db
+*.db-journal
