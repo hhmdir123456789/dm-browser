@@ -154,9 +154,6 @@ target_include_directories(dm_kb PRIVATE
     third_party
     third_party/nlohmann
 )
-
-
-
 target_compile_options(dm_kb PRIVATE /W3 /utf-8)
 target_link_libraries(dm_kb PRIVATE user32)
 
@@ -174,6 +171,21 @@ add_custom_command(TARGET dm_kb POST_BUILD
         "$<TARGET_FILE_DIR:dm_kb>/knowledge/js.json"
     COMMENT "复制知识库到输出目录"
 )
+
+# ============================================================
+# dm_learn — 学习库工具
+# ============================================================
+add_executable(dm_learn
+    src/learn/learn_main.cpp
+    src/learn/learn_store.cpp
+    src/db/Database.cpp
+)
+target_include_directories(dm_learn PRIVATE
+    src
+    third_party
+)
+target_compile_options(dm_learn PRIVATE /W3 /utf-8)
+target_link_libraries(dm_learn PRIVATE sqlite3 user32)
 
 # ============================================================
 # 安装规则
