@@ -13,3 +13,4 @@ build/
 *.lib
 *.obj
 third_party/nlohmann/json.hpp
+*.rar

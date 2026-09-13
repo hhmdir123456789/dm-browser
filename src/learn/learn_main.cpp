@@ -88,7 +88,6 @@ static void seedDemo(LearnStore& store) {
         store.updateSampleScreenshots(id, "", "", d.diff);
         store.updateSampleStatus(id, d.status);
 
-        // 给 analyzed 状态加一些差异记录
         if (std::string(d.status) == "analyzed") {
             DiffRecord dr;
             dr.sampleId = id;
