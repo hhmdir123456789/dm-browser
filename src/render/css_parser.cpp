@@ -32,27 +32,49 @@ std::string stripComments(const std::string& s) {
     return out;
 }
 
-void parseSelectorPart(const std::string& part, CssRule& rule) {
+// 解析单个选择器段："div.foo#bar" → CssSelector
+CssSelector parseSelectorPart(const std::string& part) {
+    CssSelector sel;
     std::string s = trim(part);
-    if (s.empty()) return;
+    if (s.empty()) return sel;
 
     size_t i = 0;
-    if (!s.empty() && s[0] != '.' && s[0] != '#') {
-        while (i < s.size() && s[i] != '.' && s[i] != '#') i++;
+    // 可选 tag 前缀
+    if (s[0] != '.' && s[0] != '#' && s[0] != ':') {
+        while (i < s.size() && s[i] != '.' && s[i] != '#' && s[i] != ':') i++;
         std::string t = s.substr(0, i);
         for (char& c : t) c = (char)std::tolower((unsigned char)c);
-        rule.tag = t;
+        sel.tag = t;
     }
+    // 循环读 .class / #id，跳过 :pseudo
     while (i < s.size()) {
         char c = s[i++];
+        if (c == ':') {
+            // 跳过伪类，直到下一个 . # : 或末尾
+            while (i < s.size() && s[i] != '.' && s[i] != '#' && s[i] != ':') i++;
+            continue;
+        }
         size_t start = i;
-        while (i < s.size() && s[i] != '.' && s[i] != '#') i++;
+        while (i < s.size() && s[i] != '.' && s[i] != '#' && s[i] != ':') i++;
         std::string name = s.substr(start, i - start);
-        if (c == '.') rule.classes.push_back(name);
-        else if (c == '#') rule.id = name;
+        if (c == '.') sel.classes.push_back(name);
+        else if (c == '#') sel.id = name;
     }
+    return sel;
 }
 
+// 解析后代选择器："div#main .foo .bar" → [{tag:"div", id:"main"}, {classes:["foo"]}, {classes:["bar"]}]
+std::vector<CssSelector> parseSelectorChain(const std::string& s) {
+    std::vector<CssSelector> parts;
+    std::stringstream ss(s);
+    std::string item;
+    while (ss >> item) {
+        parts.push_back(parseSelectorPart(item));
+    }
+    return parts;
+}
+
+// 解析 "color:red; font-size:14px" → 声明列表
 std::vector<CssDecl> parseDecls(const std::string& body) {
     std::vector<CssDecl> out;
     std::stringstream ss(body);
@@ -68,6 +90,27 @@ std::vector<CssDecl> parseDecls(const std::string& body) {
         }
     }
     return out;
+}
+
+// 单个选择器段是否匹配一个节点
+bool matchSingle(const CssSelector& sel, const RenderNode* node) {
+    if (!node) return false;
+    if (!sel.tag.empty() && sel.tag != node->tag) return false;
+    if (!sel.id.empty() && sel.id != node->id) return false;
+    if (!sel.classes.empty()) {
+        std::vector<std::string> tokens;
+        std::stringstream ss(node->className);
+        std::string t;
+        while (ss >> t) tokens.push_back(t);
+        for (const auto& want : sel.classes) {
+            bool found = false;
+            for (const auto& have : tokens) {
+                if (have == want) { found = true; break; }
+            }
+            if (!found) return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -86,16 +129,29 @@ std::vector<CssRule> parseCss(const std::string& css) {
         if (closeBrace == std::string::npos) break;
 
         std::string declBody = s.substr(brace + 1, closeBrace - brace - 1);
+        auto decls = parseDecls(declBody);
+        if (decls.empty()) {
+            i = closeBrace + 1;
+            continue;
+        }
 
+        // 逗号分隔的选择器组："div, .foo, #bar"
         std::stringstream selStream(selectorGroup);
         std::string singleSel;
         while (std::getline(selStream, singleSel, ',')) {
             CssRule rule;
-            parseSelectorPart(singleSel, rule);
-            if (rule.tag.empty() && rule.id.empty() && rule.classes.empty())
-                continue;
-            rule.decls = parseDecls(declBody);
-            if (!rule.decls.empty()) rules.push_back(rule);
+            rule.parts = parseSelectorChain(singleSel);
+            // 过滤无效 part
+            bool valid = !rule.parts.empty();
+            for (auto& p : rule.parts) {
+                if (p.tag.empty() && p.id.empty() && p.classes.empty()) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (!valid) continue;
+            rule.decls = decls;
+            rules.push_back(rule);
         }
 
         i = closeBrace + 1;
@@ -104,26 +160,25 @@ std::vector<CssRule> parseCss(const std::string& css) {
     return rules;
 }
 
-bool matchesSelector(const std::string& tag,
-                     const std::string& id,
-                     const std::string& className,
-                     const CssRule& rule) {
-    if (!rule.tag.empty() && rule.tag != tag) return false;
-    if (!rule.id.empty() && rule.id != id) return false;
-    if (!rule.classes.empty()) {
-        std::vector<std::string> tokens;
-        std::stringstream ss(className);
-        std::string t;
-        while (ss >> t) tokens.push_back(t);
-        for (const auto& want : rule.classes) {
-            bool found = false;
-            for (const auto& have : tokens) {
-                if (have == want) { found = true; break; }
-            }
-            if (!found) return false;
+bool matchesSelector(const RenderNode* node, const CssRule& rule) {
+    if (!node || rule.parts.empty()) return false;
+
+    // 最右的 part 必须匹配 node 本身
+    int i = (int)rule.parts.size() - 1;
+    if (!matchSingle(rule.parts[i], node)) return false;
+    i--;
+
+    if (i < 0) return true;  // 只有一个 part
+
+    // 从 parent 往上找左侧的 parts（可以跨节点）
+    const RenderNode* cur = node->parent;
+    while (i >= 0 && cur) {
+        if (matchSingle(rule.parts[i], cur)) {
+            i--;
         }
+        cur = cur->parent;
     }
-    return true;
+    return i < 0;
 }
 
 } // namespace dm::render

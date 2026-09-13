@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Render Test</title>
+  <style>
+    html, body { margin: 0; padding: 0; }
+    body { color: #333333; font-size: 16px; background-color: #ffffff; }
+    .page { padding: 20px; }
+    .page-title { font-size: 24px; color: #000000; margin-bottom: 16px; }
+    .card {
+      background-color: #f0f0f0;
+      padding: 12px;
+      margin-bottom: 12px;
+      border-width: 1px;
+      border-style: solid;
+      border-color: #cccccc;
+    }
+    .card p { color: #555555; margin-top: 4px; margin-bottom: 4px; }
+    .badge {
+      font-size: 12px;
+      color: #ffffff;
+      background-color: #3366cc;
+      padding: 2px;
+    }
+    .footer { color: #999999; font-size: 12px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-title">Render Test Page</div>
+
+    <div class="card">
+      <div>First card</div>
+      <p>Simple paragraph with <span class="badge">inline badge</span> in it.</p>
+    </div>
+
+    <div class="card">
+      <div>Second card</div>
+      <p>Another paragraph. <span class="badge">another</span></p>
+      <p>And a third paragraph.</p>
+    </div>
+
+    <div class="footer">Footer text</div>
+  </div>
+</body>
+</html>

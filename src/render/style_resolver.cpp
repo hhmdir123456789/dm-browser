@@ -37,7 +37,7 @@ void applyRules(const RenderNode* node,
                 ComputedStyle& style) {
     std::vector<const CssRule*> matched;
     for (const auto& r : rules) {
-        if (matchesSelector(node->tag, node->id, node->className, r)) {
+        if (matchesSelector(node, r)) {
             matched.push_back(&r);
         }
     }
@@ -88,11 +88,23 @@ void resolveRecursive(RenderNode* node,
     node->style = ComputedStyle{};
     node->style.display = defaultDisplay(node->tag);
 
+    // 默认值（跟 Chromium 初始值对齐）
+    node->style.position = "static";
+    node->style.fontWeight = "400";
+    node->style.color = "0,0,0";
+    node->style.fontSize = "16px";
+    node->style.backgroundColor = "0,0,0,0";
+
+    // 从父继承（覆盖默认值）
     if (parentStyle) {
-        node->style.color = parentStyle->color;
-        node->style.fontSize = parentStyle->fontSize;
-        node->style.fontWeight = parentStyle->fontWeight;
-        node->style.textAlign = parentStyle->textAlign;
+        if (!parentStyle->color.empty())
+            node->style.color = parentStyle->color;
+        if (!parentStyle->fontSize.empty())
+            node->style.fontSize = parentStyle->fontSize;
+        if (!parentStyle->fontWeight.empty())
+            node->style.fontWeight = parentStyle->fontWeight;
+        if (!parentStyle->textAlign.empty())
+            node->style.textAlign = parentStyle->textAlign;
     }
 
     applyRules(node, rules, node->style);
@@ -124,6 +136,11 @@ void resolveStyles(RenderNode* root, const std::vector<CssRule>& rules) {
     if (!root) return;
     root->style = ComputedStyle{};
     root->style.display = "block";
+    root->style.position = "static";
+    root->style.fontWeight = "400";
+    root->style.color = "0,0,0";
+    root->style.fontSize = "16px";
+    root->style.backgroundColor = "0,0,0,0";
     for (auto& c : root->children) {
         resolveRecursive(c.get(), rules, nullptr);
     }

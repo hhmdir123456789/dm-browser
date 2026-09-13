@@ -1,8 +1,60 @@
 #include "learn/multi_compare.h"
 #include <cmath>
 #include <map>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 
 namespace dm::learn {
+
+// ============================================================
+// 颜色归一化：把各种格式统一成 "r,g,b" 或 "r,g,b,a"
+// 支持：#RGB / #RRGGBB / rgb(r,g,b) / rgba(r,g,b,a) / "r,g,b" / "r,g,b,a"
+// 已经是 "r,g,b" 或 "r,g,b,a" 的原样返回
+// ============================================================
+static std::string normColor(const std::string& s) {
+    if (s.empty()) return s;
+
+    // 已经是 "r,g,b" 或 "r,g,b,a"
+    if (s.find(',') != std::string::npos) return s;
+
+    // #RRGGBB
+    if (s[0] == '#' && s.size() >= 7) {
+        unsigned int r = 0, g = 0, b = 0;
+        std::sscanf(s.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+        return std::to_string(r) + "," +
+               std::to_string(g) + "," +
+               std::to_string(b);
+    }
+
+    // #RGB
+    if (s[0] == '#' && s.size() >= 4) {
+        char rs[2] = {s[1], s[1]};
+        char gs[2] = {s[2], s[2]};
+        char bs[2] = {s[3], s[3]};
+        unsigned int r = 0, g = 0, b = 0;
+        std::sscanf(rs, "%x", &r);
+        std::sscanf(gs, "%x", &g);
+        std::sscanf(bs, "%x", &b);
+        return std::to_string(r) + "," +
+               std::to_string(g) + "," +
+               std::to_string(b);
+    }
+
+    // rgb(...) / rgba(...)
+    if (s.find("rgb") != std::string::npos) {
+        const char* p = s.c_str();
+        while (*p && *p != '(') p++;
+        if (*p == '(') p++;
+        int r = 0, g = 0, b = 0;
+        std::sscanf(p, "%d , %d , %d", &r, &g, &b);
+        return std::to_string(r) + "," +
+               std::to_string(g) + "," +
+               std::to_string(b);
+    }
+
+    return s;
+}
 
 // ============================================================
 // 结构维度
@@ -80,13 +132,18 @@ static void compareStyle(
         out.styleDiffCount++;
     };
 
-    if (!ref.style.color.empty() && ref.style.color != dm.style.color)
+    // 颜色类属性先归一化再比较
+    if (!ref.style.color.empty() &&
+        normColor(ref.style.color) != normColor(dm.style.color))
         addDiff("color", ref.style.color, dm.style.color, 3);
+
     if (!ref.style.backgroundColor.empty() &&
-        ref.style.backgroundColor != dm.style.backgroundColor &&
-        ref.style.backgroundColor != "0,0,0,0")
-        addDiff("backgroundColor", ref.style.backgroundColor,
-                dm.style.backgroundColor, 3);
+        normColor(ref.style.backgroundColor) != normColor(dm.style.backgroundColor) &&
+        normColor(ref.style.backgroundColor) != "0,0,0,0" &&
+        normColor(ref.style.backgroundColor) != "0,0,0")
+        addDiff("backgroundColor",
+                ref.style.backgroundColor, dm.style.backgroundColor, 3);
+
     if (ref.style.fontSize != dm.style.fontSize)
         addDiff("fontSize", ref.style.fontSize, dm.style.fontSize, 4);
     if (ref.style.fontWeight != dm.style.fontWeight)

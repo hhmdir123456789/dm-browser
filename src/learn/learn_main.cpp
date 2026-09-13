@@ -8,8 +8,10 @@
 #include <sstream>
 #include <string>
 #include <set>
+#include <map>
 #include <algorithm>
 #include <ctime>
+#include <cstdio>
 
 using namespace dm::learn;
 
@@ -37,6 +39,8 @@ static void printUsage() {
     std::cout << "  dm_learn infer <ref.json> <dm.json>      推断缺失特性\n";
     std::cout << "  dm_learn refs                            列出参考快照\n";
     std::cout << "  dm_learn inspect <url>                   查看 URL 的参考详情\n";
+    std::cout << "  dm_learn export <url> <file.json>        导出参考快照\n";
+    std::cout << "  dm_learn report <ref.json> <dm.json> <out.md>  生成对比报告\n";
     std::cout << "\n状态值: pending / analyzed / fixed / ignored\n";
 }
 
@@ -155,8 +159,6 @@ static void dumpDemoSnapshot() {
 // ============================================================
 // 批 C：refs / inspect
 // ============================================================
-// nowMs() 返回的是系统启动以来的毫秒数（GetTickCount64），
-// 不是 Unix 时间戳。这里按「距今多久」显示，避免 1970-01-01 的假日期。
 static std::string formatTime(int64_t ms) {
     if (ms == 0) return "(未知)";
     ULONGLONG now = GetTickCount64();
@@ -227,6 +229,192 @@ static void cmdInspect(LearnStore& store, const std::string& url) {
     if (snap.nodes.size() > 10) {
         std::cout << "  ... 还有 " << (snap.nodes.size() - 10) << " 个\n";
     }
+}
+
+// ============================================================
+// 批 F-1：export
+// ============================================================
+static void cmdExport(LearnStore& store,
+                      const std::string& url,
+                      const std::string& outPath) {
+    auto ref = store.getRef(url);
+    if (ref.id == 0) {
+        std::cout << "URL 无参考快照: " << url << "\n";
+        std::cout << "提示：先在 dm_ui.exe 打开该页面，点「分析本页」\n";
+        return;
+    }
+
+    std::ofstream out(outPath, std::ios::binary);
+    if (!out) {
+        std::cerr << "无法写入: " << outPath << "\n";
+        return;
+    }
+    out << ref.snapshotJson;
+    out.close();
+
+    auto snap = parseSnapshotJson(ref.snapshotJson);
+    std::cout << "已导出 " << ref.snapshotJson.size() << " 字节"
+              << "（" << snap.nodes.size() << " 节点）到 "
+              << outPath << "\n";
+}
+
+// ============================================================
+// 批 F-4：report
+// ============================================================
+static std::string escMd(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (c == '|') out += "\\|";
+        else if (c == '\n') out += ' ';
+        else if (c == '\r') continue;
+        else if (c == '`') out += '\'';
+        else out += c;
+    }
+    return out;
+}
+
+struct PropAgg {
+    int count = 0;
+    int sevSum = 0;
+};
+
+static void cmdReport(const std::string& refPath,
+                      const std::string& dmPath,
+                      const std::string& outPath) {
+    auto ref = parseSnapshotFile(refPath);
+    auto dm  = parseSnapshotFile(dmPath);
+    if (ref.nodes.empty() || dm.nodes.empty()) {
+        std::cerr << "无法读取快照文件\n";
+        return;
+    }
+
+    auto result = MultiCompare::compare(ref, dm);
+
+    std::map<std::string, PropAgg> byProp;
+    std::map<std::string, int> byPath;
+    for (auto& d : result.diffs) {
+        auto& p = byProp[d.property];
+        p.count++;
+        p.sevSum += d.severity;
+        byPath[d.path]++;
+    }
+
+    std::vector<std::pair<std::string, PropAgg>> propList(
+        byProp.begin(), byProp.end());
+    std::sort(propList.begin(), propList.end(),
+        [](const auto& a, const auto& b) {
+            if (a.second.count != b.second.count)
+                return a.second.count > b.second.count;
+            return a.first < b.first;
+        });
+
+    std::vector<std::pair<std::string, int>> pathList(
+        byPath.begin(), byPath.end());
+    std::sort(pathList.begin(), pathList.end(),
+        [](const auto& a, const auto& b) {
+            if (a.second != b.second) return a.second > b.second;
+            return a.first < b.first;
+        });
+
+    std::ofstream out(outPath, std::ios::binary);
+    if (!out) {
+        std::cerr << "无法写入: " << outPath << "\n";
+        return;
+    }
+
+    // UTF-8 BOM，让 Windows 记事本 / PowerShell 正确识别编码
+    out << "\xEF\xBB\xBF";
+
+    auto pct = [](double v) {
+        int p = (int)(v * 100 + 0.5);
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+        return p;
+    };
+
+    out << "# 跨引擎对比报告\n\n";
+    out << "- 参考：" << escMd(refPath) << "\n";
+    out << "- 当前：" << escMd(dmPath) << "\n";
+    out << "- 参考节点数：" << ref.nodes.size() << "\n";
+    out << "- 当前节点数：" << dm.nodes.size() << "\n";
+    out << "- 参考视口：" << ref.viewportWidth << " x " << ref.viewportHeight << "\n";
+    out << "- 当前视口：" << dm.viewportWidth << " x " << dm.viewportHeight << "\n";
+    out << "- URL：" << escMd(ref.url) << "\n\n";
+
+    out << "## 相似度\n\n";
+    out << "| 维度 | 相似度 |\n";
+    out << "|------|--------|\n";
+    out << "| 结构 | " << pct(result.structuralScore) << "% |\n";
+    out << "| 样式 | " << pct(result.styleScore) << "% |\n";
+    out << "| 布局 | " << pct(result.layoutScore) << "% |\n\n";
+
+    out << "## 差异统计\n\n";
+    out << "- 总计：" << result.diffs.size() << " 条\n";
+    out << "- 结构：" << result.structuralDiffCount << " 条\n";
+    out << "- 样式：" << result.styleDiffCount << " 条\n";
+    out << "- 布局：" << result.layoutDiffCount << " 条\n\n";
+
+    out << "## 按属性聚合（Top 20）\n\n";
+    out << "| 属性 | 次数 | 平均严重度 |\n";
+    out << "|------|------|------------|\n";
+    int n = 0;
+    for (auto& p : propList) {
+        if (n++ >= 20) break;
+        double avg = p.second.count > 0
+            ? (double)p.second.sevSum / p.second.count : 0;
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.1f", avg);
+        out << "| " << escMd(p.first) << " | " << p.second.count
+            << " | " << buf << " |\n";
+    }
+    out << "\n";
+
+    out << "## 按 DOM 路径聚合（Top 20）\n\n";
+    out << "| 路径 | 差异数 |\n";
+    out << "|------|--------|\n";
+    n = 0;
+    for (auto& p : pathList) {
+        if (n++ >= 20) break;
+        out << "| `" << escMd(p.first) << "` | " << p.second << " |\n";
+    }
+    out << "\n";
+
+    out << "## 详细差异（前 50 条，按严重度降序）\n\n";
+    out << "| 维度 | 属性 | 路径 | 参考值 | 当前值 | 严重度 |\n";
+    out << "|------|------|------|--------|--------|--------|\n";
+    auto sorted = result.diffs;
+    std::sort(sorted.begin(), sorted.end(),
+        [](const DimDiff& a, const DimDiff& b) {
+            return a.severity > b.severity;
+        });
+    n = 0;
+    for (auto& d : sorted) {
+        if (n++ >= 50) break;
+        out << "| " << escMd(d.dimension) << " | " << escMd(d.property)
+            << " | `" << escMd(d.path) << "`"
+            << " | " << escMd(d.refValue)
+            << " | " << escMd(d.dmValue)
+            << " | " << d.severity << " |\n";
+    }
+    out << "\n";
+
+    out << "## 建议\n\n";
+    out << "按差异次数排序，优先补这些能力：\n\n";
+    n = 0;
+    for (auto& p : propList) {
+        if (n++ >= 10) break;
+        out << n << ". **" << escMd(p.first) << "** —— "
+            << p.second.count << " 条差异\n";
+    }
+    out << "\n";
+
+    out.close();
+
+    std::cout << "报告已写入: " << outPath << "\n";
+    std::cout << "  差异 " << result.diffs.size() << " 条"
+              << "（结构 " << result.structuralDiffCount
+              << " / 样式 " << result.styleDiffCount
+              << " / 布局 " << result.layoutDiffCount << "）\n";
 }
 
 int main(int argc, char** argv) {
@@ -428,6 +616,12 @@ int main(int argc, char** argv) {
     }
     else if (cmd == "inspect" && argc > 2) {
         cmdInspect(store, argv[2]);
+    }
+    else if (cmd == "export" && argc > 3) {
+        cmdExport(store, argv[2], argv[3]);
+    }
+    else if (cmd == "report" && argc > 4) {
+        cmdReport(argv[2], argv[3], argv[4]);
     }
     else {
         printUsage();
