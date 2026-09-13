@@ -126,23 +126,27 @@ target_link_libraries(dm_tests PRIVATE sqlite3)
 target_compile_options(dm_tests PRIVATE /W3 /utf-8)
 
 # ============================================================
-# dm_render_test — 自研渲染引擎测试程序
-# 暂时注释：等 src/render/ 下的文件全部创建后再启用
+# dm_render_test — 自研渲染引擎（批 D 全部功能）
 # ============================================================
-# if(WIN32)
-#     add_executable(dm_render_test
-#         src/render/main.cpp
-#         src/render/html_parser.cpp
-#         src/render/css_parser.cpp
-#         src/render/renderer.cpp
-#         src/render/render_window.cpp
-#         src/render/js_lite.cpp
-#         src/render/ai_bridge.cpp
-#     )
-#     target_include_directories(dm_render_test PRIVATE src)
-#     target_compile_options(dm_render_test PRIVATE /W3 /utf-8)
-#     target_link_libraries(dm_render_test PRIVATE user32 gdi32 gdiplus winhttp)
-# endif()
+if(WIN32)
+    add_executable(dm_render_test
+        src/render/main.cpp
+        src/render/html_parser.cpp
+        src/render/css_parser.cpp
+        src/render/style_resolver.cpp
+        src/render/layout_engine.cpp
+        src/render/snapshot_dumper.cpp
+        src/render/render_window.cpp
+        src/learn/snapshot_parser.cpp
+    )
+    target_include_directories(dm_render_test PRIVATE
+        src
+        third_party
+        third_party/nlohmann
+    )
+    target_compile_options(dm_render_test PRIVATE /W3 /utf-8)
+    target_link_libraries(dm_render_test PRIVATE user32 gdi32)
+endif()
 
 # ============================================================
 # dm_kb — 知识库工具
