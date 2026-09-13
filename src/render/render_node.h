@@ -10,9 +10,11 @@ struct ComputedStyle {
     std::string backgroundColor;
     std::string fontSize;
     std::string fontWeight;
+    std::string fontFamily;
     std::string display;
     std::string position;
     std::string textAlign;
+    std::string flexDirection;
 
     int marginTop = 0, marginBottom = 0, marginLeft = 0, marginRight = 0;
     int paddingTop = 0, paddingBottom = 0, paddingLeft = 0, paddingRight = 0;
@@ -20,6 +22,9 @@ struct ComputedStyle {
     int borderWidth = 0;
     std::string borderStyle;
     std::string borderColor;
+
+    int left = 0, top = 0;
+    bool hasLeft = false, hasTop = false;
 };
 
 struct Layout {
@@ -31,6 +36,8 @@ struct RenderNode {
     std::string id;
     std::string className;
     std::string text;
+    bool isText = false;
+
     RenderNode* parent = nullptr;
     std::vector<std::unique_ptr<RenderNode>> children;
     int depth = 0;

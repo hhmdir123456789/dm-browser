@@ -135,6 +135,7 @@ if(WIN32)
         src/render/css_parser.cpp
         src/render/style_resolver.cpp
         src/render/layout_engine.cpp
+        src/render/text_measure.cpp
         src/render/snapshot_dumper.cpp
         src/render/render_window.cpp
         src/learn/snapshot_parser.cpp

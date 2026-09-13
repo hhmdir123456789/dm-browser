@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { margin: 0; font-size: 16px; color: #333; }
+    .nav {
+      display: flex;
+      background-color: #cc0000;
+      padding: 8px 16px;
+    }
+    .nav a { color: #ffffff; font-size: 14px; }
+    .container { padding: 20px; }
+    .card {
+      border: 1px solid #dddddd;
+      padding: 12px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+    .badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background-color: #ffcc00;
+      font-size: 12px;
+      padding: 2px 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="#">首页</a>
+    <a href="#">新闻</a>
+    <a href="#">财经</a>
+    <a href="#">体育</a>
+  </div>
+  <div class="container">
+    <div class="card">
+      <div class="badge">NEW</div>
+      <p>这是第一张卡片的内容。This is the first card.</p>
+    </div>
+    <div class="card">
+      <div class="badge">HOT</div>
+      <p>第二张卡片，带一段很长的文字用来测试自动换行功能是否正常工作。When the text is long enough, it should wrap automatically.</p>
+    </div>
+  </div>
+</body>
+</html>

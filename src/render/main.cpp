@@ -4,6 +4,7 @@
 #include "render/layout_engine.h"
 #include "render/snapshot_dumper.h"
 #include "render/render_window.h"
+#include "render/text_measure.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -33,6 +34,21 @@ static void printTree(const RenderNode* node, int indent,
                       bool showStyle, bool showLayout) {
     for (int i = 0; i < indent; ++i) std::cout << "  ";
 
+    if (node->isText) {
+        std::string t = node->text;
+        if (t.size() > 30) t = t.substr(0, 30) + "...";
+        std::cout << "\"" << t << "\"";
+        if (showLayout) {
+            char buf[80];
+            std::snprintf(buf, sizeof(buf), "  (%d,%d %dx%d)",
+                          (int)node->layout.x, (int)node->layout.y,
+                          (int)node->layout.w, (int)node->layout.h);
+            std::cout << buf;
+        }
+        std::cout << "\n";
+        return;
+    }
+
     std::cout << node->tag;
     if (!node->id.empty()) std::cout << "#" << node->id;
     if (!node->className.empty()) std::cout << "." << node->className;
@@ -59,13 +75,13 @@ static void printTree(const RenderNode* node, int indent,
 }
 
 static int countNodes(const RenderNode* node) {
-    int n = 1;
+    int n = node->isText ? 0 : 1;
     for (auto& c : node->children) n += countNodes(c.get());
     return n;
 }
 
 static int maxDepth(const RenderNode* node) {
-    int d = node->depth;
+    int d = node->isText ? 0 : node->depth;
     for (auto& c : node->children) {
         int cd = maxDepth(c.get());
         if (cd > d) d = cd;
@@ -78,12 +94,13 @@ int main(int argc, char** argv) {
 
     if (argc < 2) {
         std::cerr << "用法: dm_render_test <html_file> [viewport_w] [viewport_h] "
-                     "[--dump|--window]\n";
+                     "[--dump|--window|--gdi]\n";
         return 1;
     }
 
     bool dumpMode = false;
     bool windowMode = false;
+    bool useGdi = false;            // 默认关闭 GDI 度量
     std::string htmlPath;
     int vw = 1024, vh = 768;
     int posArg = 0;
@@ -91,6 +108,7 @@ int main(int argc, char** argv) {
         std::string a = argv[i];
         if (a == "--dump")   { dumpMode = true; continue; }
         if (a == "--window") { windowMode = true; continue; }
+        if (a == "--gdi")    { useGdi = true; continue; }
         if (posArg == 0) { htmlPath = a; posArg = 1; }
         else if (posArg == 1) { vw = std::atoi(a.c_str()); posArg = 2; }
         else if (posArg == 2) { vh = std::atoi(a.c_str()); posArg = 3; }
@@ -98,6 +116,15 @@ int main(int argc, char** argv) {
     if (htmlPath.empty()) {
         std::cerr << "缺少 html 文件参数\n";
         return 1;
+    }
+
+    // 只有显式 --gdi 时才启用 GDI 度量
+    // 因为 GDI 的字体渲染跟 Chromium 的 DirectWrite 有偏差
+    if (useGdi) {
+        initTextMeasurer();
+        std::cout << "[text] 使用 GDI 度量\n";
+    } else {
+        std::cout << "[text] 使用估算（跟 Chromium 对齐）\n";
     }
 
     std::ifstream f(htmlPath, std::ios::binary);

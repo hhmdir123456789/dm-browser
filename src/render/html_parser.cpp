@@ -37,6 +37,72 @@ std::string lower(const std::string& s) {
     return out;
 }
 
+// HTML 实体解码：常见命名 + 数字实体
+std::string decodeEntities(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    size_t i = 0;
+    while (i < s.size()) {
+        if (s[i] == '&') {
+            size_t semi = s.find(';', i);
+            if (semi != std::string::npos && semi - i <= 10) {
+                std::string ent = s.substr(i + 1, semi - i - 1);
+                if (ent == "nbsp") out += ' ';
+                else if (ent == "amp") out += '&';
+                else if (ent == "lt") out += '<';
+                else if (ent == "gt") out += '>';
+                else if (ent == "quot") out += '"';
+                else if (ent == "apos") out += '\'';
+                else if (ent == "mdash" || ent == "ndash") out += '-';
+                else if (ent == "hellip") out += '.';
+                else if (ent == "copy" || ent == "reg") out += 'C';
+                else if (!ent.empty() && ent[0] == '#') {
+                    int code = 0;
+                    if (ent.size() > 1 && (ent[1] == 'x' || ent[1] == 'X')) {
+                        try { code = std::stoi(ent.substr(2), nullptr, 16); } catch (...) {}
+                    } else {
+                        try { code = std::stoi(ent.substr(1)); } catch (...) {}
+                    }
+                    if (code > 0 && code < 0x80) {
+                        out += (char)code;
+                    } else if (code >= 0x80 && code <= 0x7FF) {
+                        out += (char)(0xC0 | (code >> 6));
+                        out += (char)(0x80 | (code & 0x3F));
+                    } else if (code >= 0x800 && code <= 0xFFFF) {
+                        out += (char)(0xE0 | (code >> 12));
+                        out += (char)(0x80 | ((code >> 6) & 0x3F));
+                        out += (char)(0x80 | (code & 0x3F));
+                    }
+                } else {
+                    out += s.substr(i, semi - i + 1);
+                }
+                i = semi + 1;
+                continue;
+            }
+        }
+        out += s[i++];
+    }
+    return out;
+}
+
+// 扫描 start tag 的结尾 > 时跳过引号内的内容
+size_t findTagEnd(const std::string& s, size_t start) {
+    char quote = 0;
+    size_t i = start;
+    while (i < s.size()) {
+        char c = s[i];
+        if (quote) {
+            if (c == quote) quote = 0;
+        } else if (c == '"' || c == '\'') {
+            quote = c;
+        } else if (c == '>') {
+            return i;
+        }
+        i++;
+    }
+    return std::string::npos;
+}
+
 void parseStartTag(const std::string& raw,
                    std::string& tag,
                    std::string& id,
@@ -87,11 +153,32 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
     std::string textBuf;
 
     auto flushText = [&]() {
-        std::string t = trim(textBuf);
+        std::string t = textBuf;
         textBuf.clear();
         if (t.empty()) return;
-        if (!cur->text.empty()) cur->text += " ";
-        cur->text += t;
+
+        t = decodeEntities(t);
+
+        std::string collapsed;
+        bool lastWasSpace = false;
+        bool allSpace = true;
+        for (char c : t) {
+            if (isSpace(c)) {
+                if (!lastWasSpace) collapsed += ' ';
+                lastWasSpace = true;
+            } else {
+                collapsed += c;
+                lastWasSpace = false;
+                allSpace = false;
+            }
+        }
+        if (allSpace) return;
+
+        auto tn = std::make_unique<RenderNode>();
+        tn->tag = "#text";
+        tn->isText = true;
+        tn->text = collapsed;
+        cur->appendChild(std::move(tn));
     };
 
     while (i < html.size()) {
@@ -105,13 +192,13 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
                 continue;
             }
             if (html.compare(i, 2, "<!") == 0) {
-                size_t end = html.find('>', i);
+                size_t end = findTagEnd(html, i + 2);
                 if (end == std::string::npos) break;
                 i = end + 1;
                 continue;
             }
 
-            size_t end = html.find('>', i);
+            size_t end = findTagEnd(html, i + 1);
             if (end == std::string::npos) break;
 
             std::string inner = html.substr(i + 1, end - i - 1);
@@ -120,8 +207,13 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
             if (!inner.empty() && inner[0] == '/') {
                 flushText();
                 std::string closing = lower(trim(inner.substr(1)));
-                if (cur->tag == closing && cur->parent) {
-                    cur = cur->parent;
+                // 向上找匹配的祖先（处理 <div><p></div> 这类）
+                RenderNode* p = cur;
+                while (p && p->tag != closing && p->parent) {
+                    p = p->parent;
+                }
+                if (p && p->tag == closing && p->parent) {
+                    cur = p->parent;
                 }
                 continue;
             }
@@ -137,7 +229,7 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
                 if (skipEnd == std::string::npos) {
                     i = html.size();
                 } else {
-                    size_t gt = html.find('>', skipEnd);
+                    size_t gt = findTagEnd(html, skipEnd + closeTag.size());
                     i = (gt == std::string::npos) ? html.size() : gt + 1;
                 }
                 continue;

@@ -40,12 +40,23 @@ void buildPath(const RenderNode* node, std::string& out) {
     }
 }
 
+// 非可视节点：不进快照，但递归子节点
+bool isNonVisual(const std::string& tag) {
+    return tag == "html" || tag == "head" ||
+           tag == "title" || tag == "meta" ||
+           tag == "link" || tag == "base" ||
+           tag == "script" || tag == "style" ||
+           tag == "#document";
+}
+
 void collectNodes(const RenderNode* node,
                   std::vector<dm::learn::NodeSnapshot>& out,
                   int& maxDepth,
                   int& totalCount) {
     if (!node) return;
-    if (node->tag == "#document") {
+
+    // 文本节点 / 非可视节点：不进快照，只递归子节点
+    if (node->isText || isNonVisual(lower(node->tag))) {
         for (const auto& c : node->children) {
             collectNodes(c.get(), out, maxDepth, totalCount);
         }

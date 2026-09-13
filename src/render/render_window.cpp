@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cctype>
+#include <string>
 
 namespace dm::render {
 
@@ -27,7 +28,24 @@ static COLORREF parseColor(const std::string& s) {
         std::sscanf(bs, "%x", &b);
         return RGB(r, g, b);
     }
+    // "r,g,b" 或 "r,g,b,a"
+    int r = 0, g = 0, b = 0;
+    if (std::sscanf(s.c_str(), "%d,%d,%d", &r, &g, &b) == 3) {
+        return RGB(r, g, b);
+    }
     return RGB(0, 0, 0);
+}
+
+// UTF-8 -> wide
+static std::wstring utf8ToWide(const std::string& s) {
+    if (s.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
+                                   (int)s.size(), nullptr, 0);
+    if (len <= 0) return L"";
+    std::wstring out(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(),
+                        (int)s.size(), &out[0], len);
+    return out;
 }
 
 RenderWindow::RenderWindow() = default;
@@ -63,58 +81,110 @@ bool RenderWindow::create(const std::wstring& title, int w, int h) {
 
 void RenderWindow::paintNode(HDC hdc, const RenderNode* node) {
     if (!node) return;
-    if (node->style.display == "none") return;
+    if (!node->isText && node->style.display == "none") return;
+
     if (node->tag == "#document") {
         for (auto& c : node->children) paintNode(hdc, c.get());
         return;
     }
 
-    const Layout& L = node->layout;
-    int x = (int)L.x, y = (int)L.y, w = (int)L.w, h = (int)L.h;
+    // 文本节点
+    if (node->isText) {
+        if (node->text.empty()) return;
+        const Layout& L = node->layout;
+        if (L.w <= 0 || L.h <= 0) return;
 
-    if (!node->style.backgroundColor.empty()) {
-        RECT r{x, y, x + w, y + h};
-        HBRUSH br = CreateSolidBrush(parseColor(node->style.backgroundColor));
-        FillRect(hdc, &r, br);
-        DeleteObject(br);
-    }
+        int x = (int)L.x, y = (int)L.y, w = (int)L.w, h = (int)L.h;
 
-    if (node->style.borderWidth > 0) {
-        HPEN pen = CreatePen(PS_SOLID, node->style.borderWidth,
-                             RGB(128, 128, 128));
-        HGDIOBJ oldPen = SelectObject(hdc, pen);
-        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        Rectangle(hdc, x, y, x + w, y + h);
-        SelectObject(hdc, oldPen);
-        SelectObject(hdc, oldBrush);
-        DeleteObject(pen);
-    }
-
-    if (!node->text.empty()) {
         int fs = 16;
-        std::string fss = node->style.fontSize;
-        if (!fss.empty()) {
-            try { fs = (int)std::stod(fss); } catch (...) {}
+        if (!node->style.fontSize.empty()) {
+            try { fs = (int)std::stod(node->style.fontSize); } catch (...) {}
         }
         if (fs <= 0) fs = 16;
 
-        HFONT font = CreateFontA(fs, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        HFONT font = CreateFontW(fs, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                  CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                                 DEFAULT_PITCH | FF_DONTCARE, "Microsoft YaHei");
+                                 DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
         HGDIOBJ oldFont = SelectObject(hdc, font);
 
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, parseColor(node->style.color));
 
-        RECT tr{x, y, x + w, y + h + 4};
-        DrawTextA(hdc, node->text.c_str(), -1, &tr,
-                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        std::wstring wtext = utf8ToWide(node->text);
+        RECT tr{x, y, x + w + 4, y + h + 4};
+        DrawTextW(hdc, wtext.c_str(), -1, &tr,
+                  DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOCLIP);
 
         SelectObject(hdc, oldFont);
         DeleteObject(font);
+        return;
     }
 
+    // 普通节点
+    const Layout& L = node->layout;
+    int x = (int)L.x, y = (int)L.y, w = (int)L.w, h = (int)L.h;
+
+    if (w > 0 && h > 0) {
+        int saved = SaveDC(hdc);
+
+        // 背景色
+        if (!node->style.backgroundColor.empty() &&
+            node->style.backgroundColor != "0,0,0,0" &&
+            node->style.backgroundColor != "0,0,0") {
+            RECT r{x, y, x + w, y + h};
+            HBRUSH br = CreateSolidBrush(parseColor(node->style.backgroundColor));
+            FillRect(hdc, &r, br);
+            DeleteObject(br);
+        }
+
+        // 边框
+        if (node->style.borderWidth > 0 &&
+            !node->style.borderStyle.empty() &&
+            node->style.borderStyle != "none") {
+            COLORREF bc = RGB(128, 128, 128);
+            if (!node->style.borderColor.empty()) {
+                bc = parseColor(node->style.borderColor);
+            }
+            HPEN pen = CreatePen(PS_SOLID, node->style.borderWidth, bc);
+            HGDIOBJ oldPen = SelectObject(hdc, pen);
+            HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+            Rectangle(hdc, x, y, x + w, y + h);
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(pen);
+        }
+
+        // 节点自身的 text（如果有，非文本子节点）
+        if (!node->text.empty()) {
+            int fs = 16;
+            if (!node->style.fontSize.empty()) {
+                try { fs = (int)std::stod(node->style.fontSize); } catch (...) {}
+            }
+            if (fs <= 0) fs = 16;
+
+            HFONT font = CreateFontW(fs, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                     DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                     CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                                     DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
+            HGDIOBJ oldFont = SelectObject(hdc, font);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, parseColor(node->style.color));
+
+            std::wstring wtext = utf8ToWide(node->text);
+            RECT tr{x, y, x + w, y + h + 4};
+            DrawTextW(hdc, wtext.c_str(), -1, &tr,
+                      DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+            SelectObject(hdc, oldFont);
+            DeleteObject(font);
+        }
+
+        RestoreDC(hdc, saved);
+    }
+
+    // 递归子节点
     for (auto& c : node->children) paintNode(hdc, c.get());
 }
 
@@ -135,7 +205,7 @@ LRESULT CALLBACK RenderWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
             auto* cs = (CREATESTRUCT*)lp;
             self = (RenderWindow*)cs->lpCreateParams;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)self);
-            self->hwnd_ = hwnd;
+            if (self) self->hwnd_ = hwnd;
             return 0;
         }
         case WM_PAINT: {
@@ -155,6 +225,9 @@ LRESULT CALLBACK RenderWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
             }
             return 0;
         }
+        case WM_ERASEBKGND:
+            // 我们自己在 paint 里填背景，避免闪烁
+            return 1;
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
