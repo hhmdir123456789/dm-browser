@@ -1,132 +1,4 @@
-#include "render/layout_engine.h"
-#include "render/text_measure.h"
-#include "render/length.h"
-#include <algorithm>
-#include <cctype>
-#include <vector>
-#include <string>
-#include <cmath>
-#include <sstream>
-
-namespace dm::render {
-
-namespace {
-
-int g_viewportW = 1024;
-int g_viewportH = 768;
-const int kRootFontSize = 16;
-
-int fontSizePx(const std::string& fs) {
-    std::string s;
-    for (char c : fs) {
-        if (std::isdigit((unsigned char)c) || c == '.') s += c;
-        else break;
-    }
-    if (s.empty()) return 16;
-    try { return (int)std::stod(s); } catch (...) { return 16; }
-}
-
-int fontWeightNum(const std::string& fw) {
-    if (fw == "bold") return 700;
-    if (fw == "normal" || fw.empty()) return 400;
-    try { return std::stoi(fw); } catch (...) { return 400; }
-}
-
-float lenToPx(const Length& l, int parentFontSize, float percentBase) {
-    return resolveLength(l, parentFontSize, kRootFontSize, g_viewportW, g_viewportH, percentBase);
-}
-
-std::vector<std::string> tokenize(const std::string& text) {
-    std::vector<std::string> out;
-    size_t i = 0;
-    while (i < text.size()) {
-        unsigned char c = (unsigned char)text[i];
-        if (c < 0x80) {
-            if (c == ' ') { out.push_back(" "); i++; }
-            else {
-                size_t start = i;
-                while (i < text.size()) {
-                    unsigned char cc = (unsigned char)text[i];
-                    if (cc < 0x80 && cc != ' ') i++;
-                    else break;
-                }
-                out.push_back(text.substr(start, i - start));
-            }
-        } else if ((c & 0xF0) == 0xE0) { out.push_back(text.substr(i, 3)); i += 3; }
-        else if ((c & 0xE0) == 0xC0) { out.push_back(text.substr(i, 2)); i += 2; }
-        else if ((c & 0xF8) == 0xF0) { out.push_back(text.substr(i, 4)); i += 4; }
-        else { out.push_back(text.substr(i, 1)); i++; }
-    }
-    return out;
-}
-
-bool isInline(const RenderNode* n) {
-    return n->style.display == "inline" || n->style.display == "inline-block";
-}
-bool isFlex(const RenderNode* n) {
-    return n->style.display == "flex" || n->style.display == "inline-flex";
-}
-bool isGrid(const RenderNode* n) {
-    return n->style.display == "grid" || n->style.display == "inline-grid";
-}
-bool isHidden(const RenderNode* n) {
-    if (n->isText) return false;
-    return n->style.display == "none";
-}
-bool isListItem(const RenderNode* n) {
-    return n->style.display == "list-item";
-}
-
-float computeLineHeight(const RenderNode* node, int fs) {
-    if (node->style.lineHeightIsNormal) return fs * 1.5f;
-    if (node->style.lineHeightIsNumber) return fs * node->style.lineHeightPx.value;
-    if (!node->style.lineHeightPx.isZero()) {
-        return node->style.lineHeightPx.value *
-               (node->style.lineHeightPx.unit == Length::Em ? fs : 1);
-    }
-    return fs * 1.5f;
-}
-
-float measureTextForNode(const RenderNode* node, const std::string& text,
-                         int fs, int fw) {
-    if (!node->style.fontFamilyList.empty()) {
-        return measureTextWithList(text, fs, node->style.fontFamilyList, fw);
-    }
-    return measureText(text, fs, node->style.fontFamily, fw);
-}
-
-float intrinsicWidth(const RenderNode* node) {
-    if (!node) return 0;
-    if (node->isText) {
-        int fs = fontSizePx(node->style.fontSize);
-        return measureTextForNode(node, node->text, fs,
-                                  fontWeightNum(node->style.fontWeight));
-    }
-
-    // iter3: img 用真实尺寸
-    if (node->tag == "img") {
-        if (node->intrinsicW > 0) return node->intrinsicW;
-        return 50.0f;
-    }
-
-    float w = 0;
-    if (isInline(node) || isFlex(node)) {
-        for (auto& c : node->children) w += intrinsicWidth(c.get());
-    } else {
-        for (auto& c : node->children) {
-            float cw = intrinsicWidth(c.get());
-            if (cw > w) w = cw;
-        }
-    }
-    int fs = fontSizePx(node->style.fontSize);
-    w += lenToPx(node->style.paddingLeft, fs, 0);
-    w += lenToPx(node->style.paddingRight, fs, 0);
-    w += lenToPx(node->style.borderWidth, fs, 0) * 2;
-    if (isListItem(node)) w += 20.0f;
-    return w;
-}
-
-float layoutBlockChildren(RenderNode* parent, float x, float y, float width);
+﻿float layoutBlockChildren(RenderNode* parent, float x, float y, float width);
 float layoutGridChildren(RenderNode* parent, float x, float y, float width);
 float layoutFlexChildren(RenderNode* parent, float x, float y, float width);
 float layoutTableChildren(RenderNode* parent, float x, float y, float width);
@@ -616,7 +488,7 @@ float layoutGridChildren(RenderNode* parent, float x, float y, float width) {
 // block
 // ============================================================
 float layoutBlockChildren(RenderNode* parent, float x, float y, float width) {
-    // iter3: table 分支
+    // iter3: table 鍒嗘敮
     if (parent->tag == "table") return layoutTableChildren(parent, x, y, width);
 
     if (isFlex(parent)) return layoutFlexChildren(parent, x, y, width);
@@ -850,26 +722,3 @@ float layoutBlockChildren(RenderNode* parent, float x, float y, float width) {
 }
 
 } // namespace
-
-void layoutTree(RenderNode* root, int viewportWidth, int viewportHeight) {
-    if (!root) return;
-    g_viewportW = viewportWidth;
-    g_viewportH = viewportHeight;
-    g_floatRegion = FloatRegion{};
-
-    root->layout = {0, 0, (float)viewportWidth, (float)viewportHeight};
-
-    float y = 0;
-    for (auto& c : root->children) {
-        if (isHidden(c.get())) continue;
-        g_floatRegion = FloatRegion{};
-        float h = layoutBlockChildren(c.get(), 0, y, (float)viewportWidth);
-        c->layout.x = 0;
-        c->layout.y = y;
-        c->layout.w = (float)viewportWidth;
-        c->layout.h = h;
-        y += h;
-    }
-}
-
-} // namespace dm::render
