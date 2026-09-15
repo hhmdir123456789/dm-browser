@@ -27,3 +27,5 @@ out.txt
 *.bak
 layout_block_dump.txt
 *.snapshot.json
+*.pre_*
+*.pre_iter*
