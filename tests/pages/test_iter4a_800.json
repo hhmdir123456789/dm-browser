@@ -99,7 +99,7 @@
       "path": "html>body.0>div.1",
       "tag": "div",
       "id": "",
-      "className": "box wide",
+      "className": "wide",
       "depth": 3,
       "childCount": 1,
       "textPreview": "",
@@ -108,7 +108,7 @@
       "role": "",
       "style": {
         "color": "51,51,51",
-        "backgroundColor": "0,255,0",
+        "backgroundColor": "204,204,204",
         "fontSize": "14px",
         "fontWeight": "400",
         "display": "block",

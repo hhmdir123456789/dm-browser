@@ -73,8 +73,8 @@ $j8 = Get-Content "$root\tests\pages\test_iter4a_800.json" -Encoding UTF8 -Raw |
 $box8  = $j8.nodes | Where-Object { $_.className -eq 'box' }  | Select-Object -First 1
 $wide8 = $j8.nodes | Where-Object { $_.className -eq 'wide' } | Select-Object -First 1
 
-if (-not (Check "vw=800: .box bg #00ff00"          ($box8.style.backgroundColor  -match '0,\s*255,\s*0')))  { $all = $false }
-if (-not (Check "vw=800: .wide bg default #ccc"    ($wide8.style.backgroundColor -match '204,\s*204,\s*204'))) { $all = $false }
+if (-not (Check "vw=800: .box bg #00ff00"       ($box8.style.backgroundColor  -match '0,\s*255,\s*0')))   { $all = $false }
+if (-not (Check "vw=800: .wide bg default #ccc" ($wide8.style.backgroundColor -match '204,\s*204,\s*204'))) { $all = $false }
 
 Write-Host ""
 if ($all) { Write-Host "ITER4A PASS" -ForegroundColor Green }
