@@ -551,7 +551,8 @@ void applyRules(const RenderNode* node,
 
             // iter4: filter
             else if (p == "filter") style.filterRaw = v;
-
+           // iter5: transition
+            else if (p == "transition") style.transitionRaw = v;
             else if (p == "z-index") {
                 style.zIndex = v;
                 try { style.zIndexValue = std::stoi(v); style.hasZIndex = true; } catch (...) {}

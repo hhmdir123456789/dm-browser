@@ -54,7 +54,8 @@ struct ComputedStyle {
     std::string resolvedFontFamily;
     // iter4: filter 原始串 + 解析结果
     std::string filterRaw;
-
+    // iter5: transition 原始串
+    std::string transitionRaw;
     // grid
     std::string gridTemplateColumns;
     Length gridGap;

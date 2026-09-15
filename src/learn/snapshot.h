@@ -41,6 +41,8 @@ struct NodeSnapshot {
         int intrinsicH = 0;
                 // iter4
         std::string filter;
+                // iter5
+        std::string transition;
     } style;
 
     struct Layout {

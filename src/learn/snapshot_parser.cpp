@@ -227,7 +227,9 @@ std::string serializeSnapshot(const PageSnapshot& s) {
         o << "        \"backgroundImage\": \"" << jsonEscape(n.style.backgroundImage) << "\",\n";
         o << "        \"intrinsicW\": " << n.style.intrinsicW << ",\n";
         o << "        \"intrinsicH\": " << n.style.intrinsicH << ",\n";
-        o << "        \"filter\": \"" << jsonEscape(n.style.filter) << "\"\n";
+
+        o << "        \"filter\": \"" << jsonEscape(n.style.filter) << "\",\n";
+        o << "        \"transition\": \"" << jsonEscape(n.style.transition) << "\"\n";
         o << "      },\n";
 
         o << "      \"layout\": {\n";
@@ -336,6 +338,7 @@ PageSnapshot parseSnapshotJson(const std::string& json) {
                             else if (sk == "intrinsicW")    n.style.intrinsicW = (int)p.parseNumber();
                             else if (sk == "intrinsicH")    n.style.intrinsicH = (int)p.parseNumber();
                             else if (sk == "filter")        n.style.filter = getStr(p);
+                            else if (sk == "transition")    n.style.transition = getStr(p);
                             else p.skipValue();
                         }
                         p.expect('}');
