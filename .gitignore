@@ -24,3 +24,6 @@ render.json
 *.db
 *.db-journal
 out.txt
+*.bak
+layout_block_dump.txt
+*.snapshot.json
