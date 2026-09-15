@@ -1,0 +1,32 @@
+@'
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { color: #333; background-color: #fff; font-size: 14px; margin: 0; }
+  a { display: block; color: #333; }
+  .nav li a { font-size: 18px; color: #333; }
+  .box { display: block; margin-bottom: 22px; }
+  .hidden { display: none; }
+  .flex { display: flex; }
+  .inline { display: inline; }
+  .inline-block { display: inline-block; }
+  .bold { font-weight: 700; }
+  img { display: block; position: absolute; }
+  input { display: inline-block; }
+</style>
+</head>
+<body>
+  <a href="#"><img src="x.png" alt="x"></a>
+  <div class="box">box</div>
+  <ul class="nav"><li><a href="#">nav</a></li></ul>
+  <div class="flex">flex</div>
+  <span class="inline">inline</span>
+  <span class="inline-block">inline-block</span>
+  <span class="hidden">hidden</span>
+  <div class="bold">bold</div>
+  <input type="text">
+</body>
+</html>
+'@ | Out-File -Encoding UTF8 C:\Users\86545\PycharmProjects\pythonProject3\venv\DM_LL\dm_browser\test.html

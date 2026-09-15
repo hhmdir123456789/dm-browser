@@ -5,12 +5,15 @@
 #include "render/snapshot_dumper.h"
 #include "render/render_window.h"
 #include "render/text_measure.h"
+#include "render/font_loader.h"
+#include "render/image_loader.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <cstdlib>
 #include <cstdio>
+#include <functional>
 #include <windows.h>
 
 using namespace dm::render;
@@ -100,7 +103,7 @@ int main(int argc, char** argv) {
 
     bool dumpMode = false;
     bool windowMode = false;
-    bool useGdi = false;            // 默认关闭 GDI 度量
+    bool useGdi = false;
     std::string htmlPath;
     int vw = 1024, vh = 768;
     int posArg = 0;
@@ -118,8 +121,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // 只有显式 --gdi 时才启用 GDI 度量
-    // 因为 GDI 的字体渲染跟 Chromium 的 DirectWrite 有偏差
     if (useGdi) {
         initTextMeasurer();
         std::cout << "[text] 使用 GDI 度量\n";
@@ -152,9 +153,46 @@ int main(int argc, char** argv) {
         }
     }
 
-    auto rules = parseCss(allCss);
+    // iter3: 解析 @font-face
+    std::vector<FontFaceRule> fontFaces;
+    auto rules = parseCss(allCss, &fontFaces);
+
+    // iter3: 注册 @font-face
+    for (const auto& ff : fontFaces) {
+        addFontFace(ff.family, ff.src);
+    }
+    loadAllFontFaces();
+
     auto root = parseHtml(html);
     if (!root) { std::cerr << "解析失败\n"; return 1; }
+
+    // iter3: 加载图片（相对 HTML 文件目录）
+    std::string baseDir;
+    {
+        auto pos = htmlPath.find_last_of("\\/");
+        if (pos != std::string::npos) baseDir = htmlPath.substr(0, pos + 1);
+    }
+
+    std::function<void(RenderNode*)> loadImages = [&](RenderNode* n) {
+        if (!n) return;
+        if (n->tag == "img") {
+            auto it = n->attrs.find("src");
+            if (it != n->attrs.end() && !it->second.empty()) {
+                std::string src = it->second;
+                if (src.find("://") == std::string::npos &&
+                    !(src.size() > 1 && src[1] == ':') &&
+                    !(src.size() > 0 && src[0] == '/')) {
+                    src = baseDir + src;
+                }
+                if (loadImageWic(src, n->image)) {
+                    n->intrinsicW = (float)n->image.width;
+                    n->intrinsicH = (float)n->image.height;
+                }
+            }
+        }
+        for (auto& c : n->children) loadImages(c.get());
+    };
+    loadImages(root.get());
 
     resolveStyles(root.get(), rules);
     layoutTree(root.get(), vw, vh);
@@ -178,10 +216,11 @@ int main(int argc, char** argv) {
             std::cerr << "窗口创建失败\n";
             return 1;
         }
+        std::cout << "[MAIN] root=" << (root ? "非空" : "空") << "\n";
         win.setRoot(root.get());
+        std::cout << "[MAIN] setRoot 已调用\n";
         return win.run();
     }
-
     std::cout << "解析 " << htmlPath << " (" << html.size() << " 字节) "
               << "视口 " << vw << "x" << vh << "...\n\n";
     std::cout << "样式规则: " << rules.size() << " 条\n\n";

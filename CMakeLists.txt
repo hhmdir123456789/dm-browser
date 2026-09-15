@@ -31,11 +31,26 @@ if(WIN32)
     set(WEBVIEW2_LIB "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
 endif()
 
-add_library(sqlite3 STATIC
-    third_party/sqlite3/sqlite3.c
-)
-target_include_directories(sqlite3 PUBLIC third_party/sqlite3)
-target_compile_options(sqlite3 PRIVATE /w /utf-8)
+# ============================================================
+# sqlite3：源码存在则编译，否则用已有的预编译库
+# ============================================================
+if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/sqlite3/sqlite3.c")
+    add_library(sqlite3 STATIC
+        third_party/sqlite3/sqlite3.c
+    )
+    target_include_directories(sqlite3 PUBLIC third_party/sqlite3)
+    target_compile_options(sqlite3 PRIVATE /w /utf-8)
+else()
+    add_library(sqlite3 STATIC IMPORTED GLOBAL)
+    set_target_properties(sqlite3 PROPERTIES
+        IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/Release/sqlite3.lib"
+    )
+    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/sqlite3")
+        set_target_properties(sqlite3 PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/third_party/sqlite3"
+        )
+    endif()
+endif()
 
 add_executable(dm_plugin_host
     src/ipc/Pipe.cpp
@@ -91,7 +106,7 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/src/ui/start_page.html"
             "$<TARGET_FILE_DIR:dm_ui>/start_page.html"
-        COMMENT "复制 UI 资源到输出目录"
+        COMMENT "Copy UI resources"
     )
 
     add_library(example_plugin SHARED
@@ -126,7 +141,7 @@ target_link_libraries(dm_tests PRIVATE sqlite3)
 target_compile_options(dm_tests PRIVATE /W3 /utf-8)
 
 # ============================================================
-# dm_render_test — 自研渲染引擎（批 D 全部功能）
+# dm_render_test —— 自研渲染引擎
 # ============================================================
 if(WIN32)
     add_executable(dm_render_test
@@ -135,10 +150,16 @@ if(WIN32)
         src/render/css_parser.cpp
         src/render/style_resolver.cpp
         src/render/layout_engine.cpp
+        src/render/length.cpp
         src/render/text_measure.cpp
         src/render/snapshot_dumper.cpp
         src/render/render_window.cpp
+        src/render/image_loader.cpp
+        src/render/font_loader.cpp
         src/learn/snapshot_parser.cpp
+        src/learn/multi_compare.cpp
+        src/learn/learn_store.cpp
+        src/db/Database.cpp
     )
     target_include_directories(dm_render_test PRIVATE
         src
@@ -146,11 +167,20 @@ if(WIN32)
         third_party/nlohmann
     )
     target_compile_options(dm_render_test PRIVATE /W3 /utf-8)
-    target_link_libraries(dm_render_test PRIVATE user32 gdi32)
+    target_link_libraries(dm_render_test PRIVATE
+        sqlite3
+        user32
+        gdi32
+        msimg32
+        windowscodecs
+        ole32
+        oleaut32
+        shlwapi
+    )
 endif()
 
 # ============================================================
-# dm_kb — 知识库工具
+# dm_kb —— 知识库工具
 # ============================================================
 add_executable(dm_kb
     src/knowledge/kb_main.cpp
@@ -177,11 +207,11 @@ add_custom_command(TARGET dm_kb POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/knowledge/js.json"
         "$<TARGET_FILE_DIR:dm_kb>/knowledge/js.json"
-    COMMENT "复制知识库到输出目录"
+    COMMENT "Copy knowledge base to output"
 )
 
 # ============================================================
-# dm_learn — 学习库工具
+# dm_learn —— 学习库工具
 # ============================================================
 add_executable(dm_learn
     src/learn/learn_main.cpp

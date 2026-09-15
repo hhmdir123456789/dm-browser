@@ -37,7 +37,6 @@ std::string lower(const std::string& s) {
     return out;
 }
 
-// HTML 实体解码：常见命名 + 数字实体
 std::string decodeEntities(const std::string& s) {
     std::string out;
     out.reserve(s.size());
@@ -85,7 +84,6 @@ std::string decodeEntities(const std::string& s) {
     return out;
 }
 
-// 扫描 start tag 的结尾 > 时跳过引号内的内容
 size_t findTagEnd(const std::string& s, size_t start) {
     char quote = 0;
     size_t i = start;
@@ -103,10 +101,10 @@ size_t findTagEnd(const std::string& s, size_t start) {
     return std::string::npos;
 }
 
+// iter3: 解析所有属性
 void parseStartTag(const std::string& raw,
                    std::string& tag,
-                   std::string& id,
-                   std::string& cls) {
+                   std::map<std::string, std::string>& attrs) {
     size_t i = 0;
     while (i < raw.size() && !isSpace(raw[i]) && raw[i] != '/') i++;
     tag = lower(raw.substr(0, i));
@@ -136,8 +134,7 @@ void parseStartTag(const std::string& raw,
             if (quote && i < raw.size()) i++;
         }
 
-        if (name == "id") id = value;
-        else if (name == "class") cls = value;
+        if (!name.empty()) attrs[name] = value;
     }
 }
 
@@ -207,7 +204,6 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
             if (!inner.empty() && inner[0] == '/') {
                 flushText();
                 std::string closing = lower(trim(inner.substr(1)));
-                // 向上找匹配的祖先（处理 <div><p></div> 这类）
                 RenderNode* p = cur;
                 while (p && p->tag != closing && p->parent) {
                     p = p->parent;
@@ -219,8 +215,9 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
             }
 
             flushText();
-            std::string tag, id, cls;
-            parseStartTag(inner, tag, id, cls);
+            std::string tag;
+            std::map<std::string, std::string> attrs;
+            parseStartTag(inner, tag, attrs);
             if (tag.empty()) continue;
 
             if (isSkipTag(tag)) {
@@ -237,8 +234,11 @@ std::unique_ptr<RenderNode> parseHtml(const std::string& html) {
 
             auto node = std::make_unique<RenderNode>();
             node->tag = tag;
-            node->id = id;
-            node->className = cls;
+            node->attrs = attrs;
+            auto idIt = attrs.find("id");
+            if (idIt != attrs.end()) node->id = idIt->second;
+            auto clsIt = attrs.find("class");
+            if (clsIt != attrs.end()) node->className = clsIt->second;
 
             bool selfClosing = (!inner.empty() && inner.back() == '/') ||
                                 isVoidTag(tag);

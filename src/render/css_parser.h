@@ -10,35 +10,58 @@ struct CssDecl {
     std::string value;
 };
 
-// 单个选择器段（不含空格）
-// "div.foo#bar" → tag="div", id="bar", classes=["foo"]
 struct CssSelector {
     std::string tag;
     std::string id;
     std::vector<std::string> classes;
+    std::string attrName;
+    std::string attrValue;
+    bool hasAttr = false;
+
+    bool hasNot = false;
+    bool notInvalid = false;
+    std::string notTag;
+    std::string notId;
+    std::string notClass;
+
+    std::vector<std::string> pseudos;
 };
 
-// 一条 CSS 规则
-// ".card p" → parts = [{classes:["card"]}, {tag:"p"}]
-// "div#main" → parts = [{tag:"div", id:"main"}]
+enum class Combinator {
+    Descendant,
+    Child,
+    Adjacent,
+    Sibling,
+};
+
 struct CssRule {
-    std::vector<CssSelector> parts;   // 从左（祖先）到右（后代）
-    std::vector<CssDecl> decls;
+    std::vector<CssSelector> parts;
+    std::vector<Combinator>  combinators;
+    std::vector<CssDecl>     decls;
 
     int specificity() const {
         int s = 0;
         for (const auto& p : parts) {
             if (!p.id.empty()) s += 100;
             s += (int)p.classes.size() * 10;
+            if (p.hasAttr) s += 10;
+            if (p.hasNot)  s += 10;
+            s += (int)p.pseudos.size() * 10;
             if (!p.tag.empty()) s += 1;
         }
         return s;
     }
 };
 
-std::vector<CssRule> parseCss(const std::string& css);
+// iter3: @font-face 提取结果
+struct FontFaceRule {
+    std::string family;
+    std::string src;
+};
 
-// 匹配整个后代选择器链：最右 part 匹配 node，左侧 parts 沿 parent 链匹配
+std::vector<CssRule> parseCss(const std::string& css,
+                              std::vector<FontFaceRule>* outFontFaces = nullptr);
+
 bool matchesSelector(const RenderNode* node, const CssRule& rule);
 
 } // namespace dm::render

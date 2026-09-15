@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { margin: 0; font-family: "Microsoft YaHei"; }
+  .wrap { width: 600px; background: #f5f5f5; padding: 10px; }
+  .float-img {
+    float: left;
+    width: 150px; height: 100px;
+    background: #4a90e2;
+    border-radius: 8px;
+    margin-right: 15px;
+    margin-bottom: 10px;
+  }
+  .float-right {
+    float: right;
+    width: 120px; height: 80px;
+    background: #e74c3c;
+    border-radius: 8px;
+    margin-left: 15px;
+    margin-bottom: 10px;
+  }
+  .text { font-size: 14px; line-height: 1.8; }
+  .clear { clear: both; background: #2ecc71; padding: 10px; color: #fff; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="float-img"></div>
+    <div class="float-right"></div>
+    <div class="text">
+      这是一段很长的文字，用来测试浮动元素的文字环绕效果。左边的蓝色方块向左浮动，
+      右边的红色方块向右浮动，文字应该被挤到它们中间排布，而不是被遮挡。
+      文字在蓝色方块右侧开始排版，遇到红色方块时提前换行，绕开两个浮动元素。
+      这段文字继续写长一些，确保会有多行排版，可以观察到文字如何逐行绕开浮动块。
+      当文字到达浮动元素下方时，应该恢复使用整行宽度继续排版。这是最后一行文字。
+    </div>
+    <div class="clear">clear:both 应该跳到浮动元素下方</div>
+  </div>
+</body>
+</html>

@@ -1,133 +1,494 @@
 #include "render/style_resolver.h"
+#include "render/font_loader.h"
 #include <cctype>
 #include <sstream>
 #include <algorithm>
+#include <map>
+#include <vector>
+#include <cmath>
 
 namespace dm::render {
 
 namespace {
 
-int parsePx(const std::string& v) {
-    std::string s;
-    for (char c : v) {
-        if (std::isdigit((unsigned char)c) || c == '-' || c == '+') s += c;
-        else break;
+// ============ hex 短写展开 ============
+std::string expandShortHex(const std::string& v) {
+    if (v.size() == 4 && v[0] == '#' &&
+        std::isxdigit((unsigned char)v[1]) &&
+        std::isxdigit((unsigned char)v[2]) &&
+        std::isxdigit((unsigned char)v[3])) {
+        char r = v[1], g = v[2], b = v[3];
+        std::string out = "#";
+        out += r; out += r;
+        out += g; out += g;
+        out += b; out += b;
+        return out;
     }
-    if (s.empty()) return 0;
-    try { return std::stoi(s); } catch (...) { return 0; }
+    return v;
 }
 
-std::vector<int> parsePxList(const std::string& v) {
-    std::vector<int> out;
-    std::istringstream ss(v);
-    std::string tok;
-    while (ss >> tok) {
-        out.push_back(parsePx(tok));
+// ============ HSL/HSLA → "r,g,b[,a]" ============
+int hueToRgb(float p, float q, float t) {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1.0f / 6) return (int)((p + (q - p) * 6 * t) * 255 + 0.5f);
+    if (t < 1.0f / 2) return (int)(q * 255 + 0.5f);
+    if (t < 2.0f / 3) return (int)((p + (q - p) * (2.0f / 3 - t) * 6) * 255 + 0.5f);
+    return (int)(p * 255 + 0.5f);
+}
+
+std::string hslToRgb(const std::string& str) {
+    auto p1 = str.find('(');
+    auto p2 = str.find(')');
+    if (p1 == std::string::npos || p2 == std::string::npos) return str;
+    std::string inner = str.substr(p1 + 1, p2 - p1 - 1);
+
+    std::vector<std::string> parts;
+    std::istringstream ss(inner);
+    std::string t;
+    while (std::getline(ss, t, ',')) {
+        auto s = t.find_first_not_of(" \t");
+        if (s != std::string::npos) t = t.substr(s);
+        while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+        parts.push_back(t);
+    }
+    if (parts.size() < 3) return str;
+
+    float h = 0, s = 0, l = 0, a = 1.0f;
+    try {
+        h = std::stof(parts[0]);
+        s = std::stof(parts[1]) / 100.0f;
+        l = std::stof(parts[2]) / 100.0f;
+        if (parts.size() >= 4) a = std::stof(parts[3]);
+    } catch (...) {
+        return str;
+    }
+    h = h / 360.0f;
+
+    int r, g, b;
+    if (s == 0) {
+        r = g = b = (int)(l * 255 + 0.5f);
+    } else {
+        float q = (l < 0.5f) ? (l * (1 + s)) : (l + s - l * s);
+        float p = 2 * l - q;
+        r = hueToRgb(p, q, h + 1.0f / 3);
+        g = hueToRgb(p, q, h);
+        b = hueToRgb(p, q, h - 1.0f / 3);
+    }
+
+    std::string out = std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b);
+    if (a < 1.0f) out += "," + std::to_string((int)(a * 255 + 0.5f));
+    return out;
+}
+
+// ============ RGB/RGBA → "r,g,b[,a]" ============
+std::string rgbToRgb(const std::string& str) {
+    auto p1 = str.find('(');
+    auto p2 = str.find(')');
+    if (p1 == std::string::npos || p2 == std::string::npos) return str;
+    std::string inner = str.substr(p1 + 1, p2 - p1 - 1);
+
+    std::vector<int> vals;
+    std::istringstream ss(inner);
+    std::string t;
+    int idx = 0;
+    while (std::getline(ss, t, ',')) {
+        auto s = t.find_first_not_of(" \t");
+        if (s != std::string::npos) t = t.substr(s);
+        while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+
+        if (idx == 3) {
+            try {
+                float a = std::stof(t);
+                vals.push_back(a <= 1.0f ? (int)(a * 255 + 0.5f) : (int)a);
+            } catch (...) { vals.push_back(255); }
+        } else {
+            if (!t.empty() && t.back() == '%') {
+                try { vals.push_back((int)(std::stof(t.substr(0, t.size()-1)) * 255 / 100)); }
+                catch (...) { vals.push_back(0); }
+            } else {
+                try { vals.push_back((int)std::stof(t)); }
+                catch (...) { vals.push_back(0); }
+            }
+        }
+        idx++;
+    }
+
+    if (vals.size() < 3) return str;
+    std::string out = std::to_string(vals[0]) + "," + std::to_string(vals[1]) + "," + std::to_string(vals[2]);
+    if (vals.size() >= 4) out += "," + std::to_string(vals[3]);
+    return out;
+}
+
+// ============ 颜色统一处理 ============
+std::string normalizeColor(const std::string& v) {
+    if (v.empty()) return v;
+    if (v.find("hsla(") == 0 || v.find("hsl(") == 0) return hslToRgb(v);
+    if (v.find("rgba(") == 0 || v.find("rgb(") == 0) return rgbToRgb(v);
+    if (v[0] == '#') return expandShortHex(v);
+    return v;
+}
+
+// ============ CSS 变量替换 ============
+std::string resolveCssVars(const std::string& v,
+                           const std::map<std::string, std::string>& vars) {
+    if (vars.empty()) return v;
+    std::string out = v;
+    size_t pos = 0;
+    int maxIter = 10;
+    while (maxIter-- > 0 && (pos = out.find("var(", pos)) != std::string::npos) {
+        size_t close = out.find(')', pos);
+        if (close == std::string::npos) break;
+        std::string inner = out.substr(pos + 4, close - pos - 4);
+
+        std::string name, fallback;
+        auto comma = inner.find(',');
+        if (comma != std::string::npos) {
+            name = inner.substr(0, comma);
+            fallback = inner.substr(comma + 1);
+            auto t = fallback.find_first_not_of(" \t");
+            if (t != std::string::npos) fallback = fallback.substr(t);
+            while (!fallback.empty() && (fallback.back() == ' ' || fallback.back() == '\t'))
+                fallback.pop_back();
+        } else {
+            name = inner;
+        }
+        auto t = name.find_first_not_of(" \t");
+        if (t != std::string::npos) name = name.substr(t);
+        while (!name.empty() && (name.back() == ' ' || name.back() == '\t'))
+            name.pop_back();
+
+        auto it = vars.find(name);
+        std::string replaced = (it != vars.end()) ? it->second : fallback;
+        out = out.substr(0, pos) + replaced + out.substr(close + 1);
+        pos = pos + replaced.size();
     }
     return out;
 }
 
-void applyBox(const std::string& v,
-              int& top, int& right, int& bottom, int& left) {
-    auto vals = parsePxList(v);
-    if (vals.empty()) return;
-    if (vals.size() == 1) {
-        top = right = bottom = left = vals[0];
-    } else if (vals.size() == 2) {
-        top = bottom = vals[0];
-        right = left = vals[1];
-    } else if (vals.size() == 3) {
-        top = vals[0];
-        right = left = vals[1];
-        bottom = vals[2];
-    } else {
-        top = vals[0]; right = vals[1]; bottom = vals[2]; left = vals[3];
-    }
+// ============ display 前缀标准化 ============
+std::string normalizeDisplay(const std::string& v) {
+    if (v == "-webkit-box" || v == "-webkit-flex" || v == "-ms-flexbox")
+        return "flex";
+    if (v == "-webkit-inline-box" || v == "-webkit-inline-flex" || v == "-ms-inline-flexbox")
+        return "inline-flex";
+    if (v == "flow-root" || v == "table-cell" || v == "table-row")
+        return "block";
+    if (v == "list-item")
+        return "list-item";
+    return v;
 }
 
+// ============ 默认 display ============
 std::string defaultDisplay(const std::string& tag) {
     static const char* kInline[] = {
         "a","span","b","i","em","strong","small","sub","sup",
-        "code","kbd","label","br","img","input", nullptr
+        "code","kbd","label","br","img","input","button","select","textarea", nullptr
     };
-    for (int i = 0; kInline[i]; ++i) {
-        if (tag == kInline[i]) return "inline";
-    }
+    for (int i = 0; kInline[i]; ++i) if (tag == kInline[i]) return "inline";
     static const char* kNone[] = { "script", "style", "head", "meta", "link", nullptr };
-    for (int i = 0; kNone[i]; ++i) {
-        if (tag == kNone[i]) return "none";
-    }
+    for (int i = 0; kNone[i]; ++i) if (tag == kNone[i]) return "none";
     return "block";
+}
+
+// ============ UA 默认样式 ============
+void applyUADefaults(RenderNode* node) {
+    const std::string& tag = node->tag;
+    ComputedStyle& s = node->style;
+
+    if (tag == "strong" || tag == "b") s.fontWeight = "bold";
+    else if (tag == "i" || tag == "em") s.fontStyle = "italic";
+    else if (tag == "li") s.display = "list-item";
+    else if (tag == "ul" || tag == "ol") s.display = "block";
+    else if (tag == "h1") { s.fontWeight = "bold"; s.fontSize = "32px"; }
+    else if (tag == "h2") { s.fontWeight = "bold"; s.fontSize = "24px"; }
+    else if (tag == "h3") { s.fontWeight = "bold"; s.fontSize = "19px"; }
+    else if (tag == "h4") { s.fontWeight = "bold"; s.fontSize = "16px"; }
+    else if (tag == "h5") { s.fontWeight = "bold"; s.fontSize = "13px"; }
+    else if (tag == "h6") { s.fontWeight = "bold"; s.fontSize = "11px"; }
+    else if (tag == "table") { s.display = "block"; }
+    else if (tag == "tr")    { s.display = "block"; }
+    else if (tag == "td")    { s.display = "block"; }
+}
+
+void applyBox(const std::string& v, Length& top, Length& right, Length& bottom, Length& left) {
+    std::istringstream ss(v);
+    std::vector<Length> vals;
+    std::string tok;
+    while (ss >> tok) vals.push_back(parseLength(tok));
+    if (vals.empty()) return;
+    if (vals.size() == 1) { top = right = bottom = left = vals[0]; }
+    else if (vals.size() == 2) { top = bottom = vals[0]; right = left = vals[1]; }
+    else if (vals.size() == 3) { top = vals[0]; right = left = vals[1]; bottom = vals[2]; }
+    else { top = vals[0]; right = vals[1]; bottom = vals[2]; left = vals[3]; }
+}
+
+// ============ font-family 拆分 ============
+std::vector<std::string> splitFontFamily(const std::string& v) {
+    std::vector<std::string> out;
+    std::string cur;
+    bool inQuote = false;
+    char quoteChar = 0;
+    for (size_t i = 0; i < v.size(); ++i) {
+        char c = v[i];
+        if (inQuote) {
+            if (c == quoteChar) {
+                inQuote = false;
+            } else {
+                cur += c;
+            }
+        } else if (c == '"' || c == '\'') {
+            inQuote = true;
+            quoteChar = c;
+        } else if (c == ',') {
+            auto a = cur.find_first_not_of(" \t");
+            auto b = cur.find_last_not_of(" \t");
+            if (a != std::string::npos && b != std::string::npos)
+                out.push_back(cur.substr(a, b - a + 1));
+            cur.clear();
+        } else {
+            cur += c;
+        }
+    }
+    auto a = cur.find_first_not_of(" \t");
+    auto b = cur.find_last_not_of(" \t");
+    if (a != std::string::npos && b != std::string::npos)
+        out.push_back(cur.substr(a, b - a + 1));
+    return out;
+}
+
+// ============ line-height 类型判断 ============
+void parseLineHeight(const std::string& v, ComputedStyle& style) {
+    style.lineHeight = v;
+    style.lineHeightIsNumber = false;
+    style.lineHeightIsNormal = false;
+
+    std::string t = v;
+    auto a = t.find_first_not_of(" \t");
+    if (a != std::string::npos) t = t.substr(a);
+    while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+
+    if (t == "normal") {
+        style.lineHeightIsNormal = true;
+        style.lineHeightPx = Length{};
+        return;
+    }
+
+    bool allNum = !t.empty();
+    bool hasDot = false;
+    for (char c : t) {
+        if (c == '.') { if (hasDot) { allNum = false; break; } hasDot = true; }
+        else if (!std::isdigit((unsigned char)c)) { allNum = false; break; }
+    }
+    if (allNum) {
+        style.lineHeightIsNumber = true;
+        style.lineHeightPx = Length{ (float)std::atof(t.c_str()), Length::Em };
+        return;
+    }
+
+    style.lineHeightPx = parseLength(t);
+}
+
+// ============ 判断 background 值是否是渐变 ============
+bool isGradient(const std::string& v) {
+    return v.find("linear-gradient(") != std::string::npos ||
+           v.find("radial-gradient(")  != std::string::npos ||
+           v.find("repeating-linear-gradient(") != std::string::npos ||
+           v.find("repeating-radial-gradient(")  != std::string::npos;
+}
+
+// ============ list-style 简写解析 ============
+void parseListStyleShorthand(const std::string& v, ComputedStyle& style) {
+    std::istringstream ss(v);
+    std::string tok;
+    while (ss >> tok) {
+        if (tok == "inside" || tok == "outside") {
+            style.listStylePosition = tok;
+        } else if (tok == "none") {
+            style.listStyleType = "none";
+        } else if (tok == "disc" || tok == "circle" || tok == "square" ||
+                   tok == "decimal" || tok == "decimal-leading-zero" ||
+                   tok == "lower-alpha" || tok == "upper-alpha" ||
+                   tok == "lower-roman" || tok == "upper-roman") {
+            style.listStyleType = tok;
+        }
+    }
 }
 
 void applyRules(const RenderNode* node,
                 const std::vector<CssRule>& rules,
                 ComputedStyle& style) {
     std::vector<const CssRule*> matched;
-    for (const auto& r : rules) {
-        if (matchesSelector(node, r)) {
-            matched.push_back(&r);
+    for (const auto& r : rules) if (matchesSelector(node, r)) matched.push_back(&r);
+
+    std::stable_sort(matched.begin(), matched.end(),
+        [](const CssRule* a, const CssRule* b) { return a->specificity() < b->specificity(); });
+
+    // 第一遍：收集 CSS 变量
+    for (const auto* r : matched) {
+        for (const auto& d : r->decls) {
+            if (d.property.size() >= 2 && d.property[0] == '-' && d.property[1] == '-') {
+                style.cssVars[d.property] = d.value;
+            }
         }
     }
-    std::sort(matched.begin(), matched.end(),
-        [](const CssRule* a, const CssRule* b) {
-            return a->specificity() < b->specificity();
-        });
 
+    // 第二遍：应用普通属性
     for (const auto* r : matched) {
         for (const auto& d : r->decls) {
             const std::string& p = d.property;
-            std::string v = d.value;
+            if (p.size() >= 2 && p[0] == '-' && p[1] == '-') continue;
 
-            // 去掉 !important
+            std::string v = d.value;
             auto imp = v.rfind("!important");
             if (imp != std::string::npos) v = v.substr(0, imp);
-            // 去掉尾部空格
-            while (!v.empty() && (v.back() == ' ' || v.back() == '\t'))
-                v.pop_back();
+            while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
 
-            if (p == "color") style.color = v;
-            else if (p == "background-color") style.backgroundColor = v;
+            v = resolveCssVars(v, style.cssVars);
+
+            if (p == "color") style.color = normalizeColor(v);
+            else if (p == "background-color") style.backgroundColor = normalizeColor(v);
             else if (p == "background") {
-                auto hash = v.find('#');
-                if (hash != std::string::npos && hash + 7 <= v.size()) {
-                    style.backgroundColor = v.substr(hash, 7);
+                if (isGradient(v)) {
+                    style.backgroundImageRaw = v;
+                } else {
+                    auto hash = v.find('#');
+                    if (hash != std::string::npos) {
+                        size_t avail = v.size() - hash;
+                        if (avail >= 7) {
+                            std::string hex = v.substr(hash, 7);
+                            bool ok = true;
+                            for (int k = 1; k < 7; ++k)
+                                if (!std::isxdigit((unsigned char)hex[k])) { ok = false; break; }
+                            if (ok) style.backgroundColor = hex;
+                        }
+                        if (style.backgroundColor.empty() && avail >= 4) {
+                            std::string hex = v.substr(hash, 4);
+                            bool ok = true;
+                            for (int k = 1; k < 4; ++k)
+                                if (!std::isxdigit((unsigned char)hex[k])) { ok = false; break; }
+                            if (ok) style.backgroundColor = expandShortHex(hex);
+                        }
+                    }
+                    if (v.find("hsl(") != std::string::npos || v.find("hsla(") != std::string::npos) {
+                        auto p1 = v.find("hsl");
+                        style.backgroundColor = hslToRgb(v.substr(p1));
+                    }
+                    if (v.find("rgb(") != std::string::npos || v.find("rgba(") != std::string::npos) {
+                        auto p1 = v.find("rgb");
+                        style.backgroundColor = rgbToRgb(v.substr(p1));
+                    }
+                    if (v.find("url(") != std::string::npos) style.backgroundImage = v;
+                }
+            }
+            else if (p == "background-image") {
+                if (isGradient(v)) {
+                    style.backgroundImageRaw = v;
+                } else {
+                    style.backgroundImage = v;
                 }
             }
             else if (p == "font-size") style.fontSize = v;
             else if (p == "font-weight") style.fontWeight = v;
-            else if (p == "font-family") style.fontFamily = v;
-            else if (p == "display") style.display = v;
+            else if (p == "font-family") {
+                style.fontFamily = v;
+                style.fontFamilyList = splitFontFamily(v);
+            }
+            else if (p == "display") style.display = normalizeDisplay(v);
             else if (p == "position") style.position = v;
             else if (p == "text-align") style.textAlign = v;
             else if (p == "flex-direction") style.flexDirection = v;
-            else if (p == "left") { style.left = parsePx(v); style.hasLeft = true; }
-            else if (p == "top")  { style.top = parsePx(v);  style.hasTop = true; }
-            else if (p == "margin-top") style.marginTop = parsePx(v);
-            else if (p == "margin-bottom") style.marginBottom = parsePx(v);
-            else if (p == "margin-left") style.marginLeft = parsePx(v);
-            else if (p == "margin-right") style.marginRight = parsePx(v);
-            else if (p == "margin") applyBox(v, style.marginTop, style.marginRight,
-                                             style.marginBottom, style.marginLeft);
-            else if (p == "padding-top") style.paddingTop = parsePx(v);
-            else if (p == "padding-bottom") style.paddingBottom = parsePx(v);
-            else if (p == "padding-left") style.paddingLeft = parsePx(v);
-            else if (p == "padding-right") style.paddingRight = parsePx(v);
-            else if (p == "padding") applyBox(v, style.paddingTop, style.paddingRight,
-                                              style.paddingBottom, style.paddingLeft);
-            else if (p == "border-width") style.borderWidth = parsePx(v);
+            else if (p == "justify-content") style.justifyContent = v;
+            else if (p == "align-items") style.alignItems = v;
+            else if (p == "flex-wrap") style.flexWrap = v;
+            else if (p == "line-height") {
+                parseLineHeight(v, style);
+            }
+            else if (p == "vertical-align") style.verticalAlign = v;
+            else if (p == "box-sizing") style.boxSizing = v;
+            else if (p == "overflow") style.overflow = v;
+            else if (p == "float") style.floatDir = v;
+            else if (p == "clear") style.clear = v;
+            else if (p == "transform") style.transform = v;
+
+            // iter1
+            else if (p == "opacity") {
+                try {
+                    style.opacity = std::stof(v);
+                    if (style.opacity < 0) style.opacity = 0;
+                    if (style.opacity > 1) style.opacity = 1;
+                } catch (...) {}
+            }
+            else if (p == "font-style") style.fontStyle = v;
+            else if (p == "right")  { style.right  = parseLength(v); style.hasRight  = true; }
+            else if (p == "bottom") { style.bottom = parseLength(v); style.hasBottom = true; }
+
+            // iter2
+            else if (p == "list-style-type") style.listStyleType = v;
+            else if (p == "list-style-position") style.listStylePosition = v;
+            else if (p == "list-style") parseListStyleShorthand(v, style);
+
+            else if (p == "z-index") {
+                style.zIndex = v;
+                try { style.zIndexValue = std::stoi(v); style.hasZIndex = true; } catch (...) {}
+            }
+            else if (p == "border-radius") { style.borderRadius = parseLength(v); style.hasBorderRadius = true; }
+            else if (p == "left") { style.left = parseLength(v); style.hasLeft = true; }
+            else if (p == "top")  { style.top  = parseLength(v); style.hasTop = true; }
+            else if (p == "width")  { style.width = parseLength(v); style.hasWidth = true; }
+            else if (p == "height") { style.height = parseLength(v); style.hasHeight = true; }
+            else if (p == "min-width")  { style.minWidth = parseLength(v); style.hasMinWidth = true; }
+            else if (p == "max-width")  { style.maxWidth = parseLength(v); style.hasMaxWidth = true; }
+            else if (p == "min-height") { style.minHeight = parseLength(v); style.hasMinHeight = true; }
+            else if (p == "max-height") { style.maxHeight = parseLength(v); style.hasMaxHeight = true; }
+            else if (p == "margin-top") style.marginTop = parseLength(v);
+            else if (p == "margin-bottom") style.marginBottom = parseLength(v);
+            else if (p == "margin-left") style.marginLeft = parseLength(v);
+            else if (p == "margin-right") style.marginRight = parseLength(v);
+            else if (p == "margin") applyBox(v, style.marginTop, style.marginRight, style.marginBottom, style.marginLeft);
+            else if (p == "padding-top") style.paddingTop = parseLength(v);
+            else if (p == "padding-bottom") style.paddingBottom = parseLength(v);
+            else if (p == "padding-left") style.paddingLeft = parseLength(v);
+            else if (p == "padding-right") style.paddingRight = parseLength(v);
+            else if (p == "padding") applyBox(v, style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft);
+            else if (p == "border-width") style.borderWidth = parseLength(v);
             else if (p == "border-style") style.borderStyle = v;
-            else if (p == "border-color") style.borderColor = v;
+            else if (p == "border-color") style.borderColor = normalizeColor(v);
             else if (p == "border") {
-                auto vals = parsePxList(v);
-                if (!vals.empty()) style.borderWidth = vals[0];
+                std::istringstream vs(v);
+                std::string tok;
+                while (vs >> tok) {
+                    Length l = parseLength(tok);
+                    if (l.value > 0 || tok == "0") { style.borderWidth = l; break; }
+                }
                 if (v.find("solid") != std::string::npos) style.borderStyle = "solid";
                 else if (v.find("dashed") != std::string::npos) style.borderStyle = "dashed";
                 auto hash = v.find('#');
-                if (hash != std::string::npos && hash + 7 <= v.size()) {
-                    style.borderColor = v.substr(hash, 7);
+                if (hash != std::string::npos) {
+                    size_t avail = v.size() - hash;
+                    if (avail >= 7) {
+                        std::string hex = v.substr(hash, 7);
+                        bool ok = true;
+                        for (int k = 1; k < 7; ++k)
+                            if (!std::isxdigit((unsigned char)hex[k])) { ok = false; break; }
+                        if (ok) style.borderColor = hex;
+                    }
                 }
             }
+            else if (p == "grid-template-columns") style.gridTemplateColumns = v;
+            else if (p == "gap") {
+                std::istringstream vs(v);
+                std::string t1, t2;
+                vs >> t1;
+                if (!vs.eof()) vs >> t2;
+                style.gridRowGap = parseLength(t1);
+                style.gridColumnGap = t2.empty() ? parseLength(t1) : parseLength(t2);
+                style.hasGridGap = true;
+                style.hasGridRowGap = true;
+                style.hasGridColumnGap = true;
+            }
+            else if (p == "column-gap") { style.gridColumnGap = parseLength(v); style.hasGridColumnGap = true; }
+            else if (p == "row-gap")    { style.gridRowGap = parseLength(v);    style.hasGridRowGap = true; }
         }
     }
 }
@@ -136,43 +497,74 @@ void resolveRecursive(RenderNode* node,
                       const std::vector<CssRule>& rules,
                       const ComputedStyle* parentStyle) {
     if (node->isText) {
-        if (parentStyle) {
-            node->style = *parentStyle;
-        } else {
+        if (parentStyle) node->style = *parentStyle;
+        else {
             node->style = ComputedStyle{};
             node->style.display = "inline";
             node->style.position = "static";
             node->style.fontWeight = "400";
             node->style.color = "0,0,0";
             node->style.fontSize = "16px";
-            node->style.backgroundColor = "0,0,0,0";
         }
         return;
     }
 
     node->style = ComputedStyle{};
     node->style.display = defaultDisplay(node->tag);
-
     node->style.position = "static";
     node->style.fontWeight = "400";
     node->style.color = "0,0,0";
     node->style.fontSize = "16px";
-    node->style.backgroundColor = "0,0,0,0";
     node->style.flexDirection = "row";
+    node->style.justifyContent = "flex-start";
+    node->style.alignItems = "stretch";
+    node->style.flexWrap = "nowrap";
+    node->style.boxSizing = "content-box";
+
+    applyUADefaults(node);
+
+    if (node->tag == "ul" || node->tag == "ol") {
+        if (node->style.listStyleType.empty()) node->style.listStyleType = "disc";
+    }
+    if (node->tag == "ol") {
+        node->style.listStyleType = "decimal";
+    }
 
     if (parentStyle) {
         if (!parentStyle->color.empty()) node->style.color = parentStyle->color;
         if (!parentStyle->fontSize.empty()) node->style.fontSize = parentStyle->fontSize;
-        if (!parentStyle->fontWeight.empty()) node->style.fontWeight = parentStyle->fontWeight;
+        if (!parentStyle->fontWeight.empty() && node->style.fontWeight == "400")
+            node->style.fontWeight = parentStyle->fontWeight;
         if (!parentStyle->textAlign.empty()) node->style.textAlign = parentStyle->textAlign;
-        if (!parentStyle->fontFamily.empty()) node->style.fontFamily = parentStyle->fontFamily;
+        if (!parentStyle->fontFamily.empty()) {
+            node->style.fontFamily = parentStyle->fontFamily;
+            node->style.fontFamilyList = parentStyle->fontFamilyList;
+        }
+        if (!parentStyle->lineHeight.empty()) {
+            node->style.lineHeight = parentStyle->lineHeight;
+            node->style.lineHeightPx = parentStyle->lineHeightPx;
+            node->style.lineHeightIsNumber = parentStyle->lineHeightIsNumber;
+            node->style.lineHeightIsNormal = parentStyle->lineHeightIsNormal;
+        }
+        if (!parentStyle->listStyleType.empty() && node->style.listStyleType.empty())
+            node->style.listStyleType = parentStyle->listStyleType;
+        if (!parentStyle->listStylePosition.empty() && node->style.listStylePosition.empty())
+            node->style.listStylePosition = parentStyle->listStylePosition;
+        node->style.cssVars = parentStyle->cssVars;
     }
 
     applyRules(node, rules, node->style);
 
-    for (auto& c : node->children) {
-        resolveRecursive(c.get(), rules, &node->style);
+    // iter3: fontFamilyList 中是否有 @font-face 注册的字体
+    for (const auto& f : node->style.fontFamilyList) {
+        std::string hit = lookupFontFace(f);
+        if (!hit.empty()) {
+            node->style.resolvedFontFamily = hit;
+            break;
+        }
     }
+
+    for (auto& c : node->children) resolveRecursive(c.get(), rules, &node->style);
 }
 
 } // namespace
@@ -195,17 +587,15 @@ std::vector<std::string> extractStyleBlocks(const std::string& html) {
 
 void resolveStyles(RenderNode* root, const std::vector<CssRule>& rules) {
     if (!root) return;
+    clearFontFaces();
     root->style = ComputedStyle{};
     root->style.display = "block";
     root->style.position = "static";
     root->style.fontWeight = "400";
     root->style.color = "0,0,0";
     root->style.fontSize = "16px";
-    root->style.backgroundColor = "0,0,0,0";
     root->style.flexDirection = "row";
-    for (auto& c : root->children) {
-        resolveRecursive(c.get(), rules, nullptr);
-    }
+    for (auto& c : root->children) resolveRecursive(c.get(), rules, nullptr);
 }
 
 } // namespace dm::render

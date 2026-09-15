@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { margin: 0; padding: 0; font-size: 14px; color: #333; background: #fff; }
+  ul.disc    { list-style: disc;    padding-left: 20px; margin: 4px 0; }
+  ul.circle  { list-style: circle;  padding-left: 20px; margin: 4px 0; }
+  ul.square  { list-style: square;  padding-left: 20px; margin: 4px 0; }
+  ul.decimal { list-style: decimal; padding-left: 20px; margin: 4px 0; }
+  .lg  { width: 200px; height: 60px; background: linear-gradient(to right, #ff0000, #0000ff); }
+  .lgv { width: 200px; height: 60px; background: linear-gradient(to bottom, #00ff00, #000000); }
+  .rg  { width: 120px; height: 120px; background: radial-gradient(#ffffff, #000000); }
+  .ff  { font-family: "NoSuchFont_XXX", "Microsoft YaHei", sans-serif; font-size: 20px; }
+  .lh-num    { line-height: 2; }
+  .lh-normal { line-height: normal; }
+  .lh-px     { line-height: 32px; }
+</style>
+</head>
+<body>
+  <ul class="disc"><li>disc one</li><li>disc two</li></ul>
+  <ul class="circle"><li>circle one</li></ul>
+  <ul class="square"><li>square one</li></ul>
+  <ul class="decimal"><li>decimal one</li><li>decimal two</li></ul>
+  <div class="lg">linear to right</div>
+  <div class="lgv">linear to bottom</div>
+  <div class="rg">radial</div>
+  <div class="ff">font fallback test</div>
+  <div class="lh-num">line-height 2</div>
+  <div class="lh-normal">line-height normal</div>
+  <div class="lh-px">line-height 32px</div>
+</body>
+</html>

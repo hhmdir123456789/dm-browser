@@ -5,16 +5,14 @@
 
 namespace dm::learn {
 
-// 单个节点的多维度快照
 struct NodeSnapshot {
-    std::string path;          // 稳定路径：html>body>div.1>p.0
+    std::string path;
     std::string tag;
     std::string id;
     std::string className;
     int depth = 0;
     int childCount = 0;
 
-    // 样式维度
     struct Style {
         std::string color;
         std::string backgroundColor;
@@ -29,22 +27,30 @@ struct NodeSnapshot {
         int paddingLeft = 0, paddingRight = 0;
         int borderWidth = 0;
         std::string borderStyle;
+
+        // iter1
+        std::string opacity;
+        std::string fontStyle;
+
+        // iter2
+        std::string listStyleType;
+        std::string backgroundImage;
+
+        // iter3
+        int intrinsicW = 0;
+        int intrinsicH = 0;
     } style;
 
-    // 布局维度
     struct Layout {
         float x = 0, y = 0, w = 0, h = 0;
     } layout;
 
     std::string textPreview;
-
-    // 语义维度
     std::string alt;
     std::string ariaLabel;
     std::string role;
 };
 
-// 整页快照
 struct PageSnapshot {
     std::string url;
     std::string title;
@@ -60,19 +66,17 @@ struct PageSnapshot {
     int styleSheetCount = 0;
 };
 
-// 单个差异
 struct DimDiff {
-    std::string dimension;     // structural / style / layout
-    std::string category;      // missing_node / extra_node / color_diff / ...
+    std::string dimension;
+    std::string category;
     std::string path;
-    std::string property;      // 具体属性（如 "fontSize"）
+    std::string property;
     std::string refValue;
     std::string dmValue;
     int severity = 1;
     std::string description;
 };
 
-// 多维对比结果
 struct MultiDimResult {
     std::string url;
     double structuralScore = 1.0;

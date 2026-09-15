@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { margin: 0; padding: 0; font-size: 14px; color: #333; background: #fff; }
+  .item { padding: 8px; margin: 4px; background: #f0f0f0; }
+  .item:first-child { background: #ffe0e0; }
+  .item:not(.keep) { color: #c00; }
+  .rel { position: relative; left: 20px; top: 10px; background: #e0f0ff; padding: 6px; }
+  .op { opacity: 0.5; background: #333; color: #fff; padding: 10px; }
+  .it { font-style: italic; }
+</style>
+</head>
+<body>
+  <div class="item keep">item 1 first keep</div>
+  <div class="item">item 2 not keep</div>
+  <div class="item">item 3 not keep</div>
+  <div class="rel">relative offset</div>
+  <div class="op">opacity 0.5</div>
+  <div class="it">italic text</div>
+</body>
+</html>

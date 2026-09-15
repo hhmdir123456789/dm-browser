@@ -220,7 +220,13 @@ std::string serializeSnapshot(const PageSnapshot& s) {
         o << "        \"paddingLeft\": " << n.style.paddingLeft << ",\n";
         o << "        \"paddingRight\": " << n.style.paddingRight << ",\n";
         o << "        \"borderWidth\": " << n.style.borderWidth << ",\n";
-        o << "        \"borderStyle\": \"" << jsonEscape(n.style.borderStyle) << "\"\n";
+        o << "        \"borderStyle\": \"" << jsonEscape(n.style.borderStyle) << "\",\n";
+        o << "        \"opacity\": \"" << jsonEscape(n.style.opacity) << "\",\n";
+        o << "        \"fontStyle\": \"" << jsonEscape(n.style.fontStyle) << "\",\n";
+        o << "        \"listStyleType\": \"" << jsonEscape(n.style.listStyleType) << "\",\n";
+        o << "        \"backgroundImage\": \"" << jsonEscape(n.style.backgroundImage) << "\",\n";
+        o << "        \"intrinsicW\": " << n.style.intrinsicW << ",\n";
+        o << "        \"intrinsicH\": " << n.style.intrinsicH << "\n";
         o << "      },\n";
 
         o << "      \"layout\": {\n";
@@ -322,6 +328,12 @@ PageSnapshot parseSnapshotJson(const std::string& json) {
                             else if (sk == "paddingRight")  n.style.paddingRight = (int)p.parseNumber();
                             else if (sk == "borderWidth")   n.style.borderWidth = (int)p.parseNumber();
                             else if (sk == "borderStyle")   n.style.borderStyle = getStr(p);
+                            else if (sk == "opacity")       n.style.opacity = getStr(p);
+                            else if (sk == "fontStyle")     n.style.fontStyle = getStr(p);
+                            else if (sk == "listStyleType") n.style.listStyleType = getStr(p);
+                            else if (sk == "backgroundImage") n.style.backgroundImage = getStr(p);
+                            else if (sk == "intrinsicW")    n.style.intrinsicW = (int)p.parseNumber();
+                            else if (sk == "intrinsicH")    n.style.intrinsicH = (int)p.parseNumber();
                             else p.skipValue();
                         }
                         p.expect('}');
