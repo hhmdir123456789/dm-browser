@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
     };
     loadImages(root.get());
 
-    resolveStyles(root.get(), rules);
+    resolveStyles(root.get(), rules, vw, vh);
     layoutTree(root.get(), vw, vh);
 
     if (dumpMode) {

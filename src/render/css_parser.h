@@ -39,6 +39,9 @@ struct CssRule {
     std::vector<Combinator>  combinators;
     std::vector<CssDecl>     decls;
 
+    // iter4: 所属 @media 条件，空表示无条件
+    std::string mediaCondition;
+
     int specificity() const {
         int s = 0;
         for (const auto& p : parts) {

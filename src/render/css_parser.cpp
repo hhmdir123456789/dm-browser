@@ -53,8 +53,8 @@ CssSelector parseSelectorPart(const std::string& part) {
         if (c == ':') {
             i++;
             size_t start = i;
-            while (i < s.size() && s[i] != '.' && s[i] != '#' && s[i] != '[' && s[i] != ':'
-                   && s[i] != '(' && s[i] != ' ') i++;
+            while (i < s.size() && s[i] != '.' && s[i] != '#' && s[i] != '['
+                   && s[i] != ':' && s[i] != '(' && s[i] != ' ') i++;
             std::string pseudo = s.substr(start, i - start);
             for (char& ch : pseudo) ch = (char)std::tolower((unsigned char)ch);
 
@@ -304,9 +304,13 @@ bool matchSingle(const CssSelector& sel, const RenderNode* node) {
     return true;
 }
 
+// ============================================================
+// iter4: @media 条件收集
+// ============================================================
 void parseCssInto(const std::string& css,
                   std::vector<CssRule>& rules,
-                  std::vector<FontFaceRule>* outFontFaces) {
+                  std::vector<FontFaceRule>* outFontFaces,
+                  const std::string& mediaCondition = "") {
     std::string s = css;
     size_t i = 0;
 
@@ -332,12 +336,22 @@ void parseCssInto(const std::string& css,
             }
             if (j >= s.size()) break;
 
-            if (selectorGroup.rfind("@media", 0) == 0 ||
-                selectorGroup.rfind("@supports", 0) == 0) {
+            // iter4: @media 记录条件；@supports 透传；@font-face 提取
+            if (selectorGroup.rfind("@media", 0) == 0) {
+                std::string cond = trim(selectorGroup.substr(6));
                 std::string inner = s.substr(innerStart, j - innerStart);
-                parseCssInto(inner, rules, outFontFaces);
+                std::string newCond = cond;
+                if (!mediaCondition.empty() && !cond.empty()) {
+                    newCond = mediaCondition + " and " + cond;
+                } else if (!mediaCondition.empty()) {
+                    newCond = mediaCondition;
+                }
+                parseCssInto(inner, rules, outFontFaces, newCond);
             }
-            // iter3: @font-face 提取
+            else if (selectorGroup.rfind("@supports", 0) == 0) {
+                std::string inner = s.substr(innerStart, j - innerStart);
+                parseCssInto(inner, rules, outFontFaces, mediaCondition);
+            }
             else if (selectorGroup.rfind("@font-face", 0) == 0 && outFontFaces) {
                 std::string inner = s.substr(innerStart, j - innerStart);
                 auto decls = parseDecls(inner);
@@ -386,6 +400,7 @@ void parseCssInto(const std::string& css,
             }
 
             rule.decls = decls;
+            rule.mediaCondition = mediaCondition;   // iter4
             rules.push_back(rule);
         }
 

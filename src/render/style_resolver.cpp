@@ -339,11 +339,57 @@ void parseListStyleShorthand(const std::string& v, ComputedStyle& style) {
     }
 }
 
+// ============ iter4: @media 条件判断 ============
+bool mediaMatches(const std::string& cond, int vw, int vh) {
+    if (cond.empty()) return true;
+    std::string s = cond;
+    size_t pos = 0;
+    bool allTrue = true;
+    while (pos < s.size()) {
+        auto lp = s.find('(', pos);
+        if (lp == std::string::npos) {
+            std::string kw = s.substr(pos);
+            auto a = kw.find_first_not_of(" \t");
+            if (a != std::string::npos) kw = kw.substr(a);
+            while (!kw.empty() && (kw.back() == ' ' || kw.back() == '\t')) kw.pop_back();
+            if (kw == "print") allTrue = false;
+            break;
+        }
+        auto rp = s.find(')', lp);
+        if (rp == std::string::npos) break;
+        std::string inner = s.substr(lp + 1, rp - lp - 1);
+        pos = rp + 1;
+        auto colon = inner.find(':');
+        if (colon == std::string::npos) continue;
+        std::string prop = inner.substr(0, colon);
+        std::string val  = inner.substr(colon + 1);
+        auto a = prop.find_first_not_of(" \t");
+        if (a != std::string::npos) prop = prop.substr(a);
+        while (!prop.empty() && (prop.back() == ' ' || prop.back() == '\t')) prop.pop_back();
+        auto b = val.find_first_not_of(" \t");
+        if (b != std::string::npos) val = val.substr(b);
+        while (!val.empty() && (val.back() == ' ' || val.back() == '\t')) val.pop_back();
+        int num = 0;
+        try { num = std::stoi(val); } catch (...) { continue; }
+        if (prop == "min-width")  { if (vw < num)  allTrue = false; }
+        else if (prop == "max-width")  { if (vw > num)  allTrue = false; }
+        else if (prop == "min-height") { if (vh < num)  allTrue = false; }
+        else if (prop == "max-height") { if (vh > num)  allTrue = false; }
+    }
+    return allTrue;
+}
+
+// ============ iter4: applyRules 带 viewport 过滤 ============
 void applyRules(const RenderNode* node,
                 const std::vector<CssRule>& rules,
-                ComputedStyle& style) {
+                ComputedStyle& style,
+                int viewportW, int viewportH) {
     std::vector<const CssRule*> matched;
-    for (const auto& r : rules) if (matchesSelector(node, r)) matched.push_back(&r);
+    for (const auto& r : rules) {
+        if (!matchesSelector(node, r)) continue;
+        if (!mediaMatches(r.mediaCondition, viewportW, viewportH)) continue;
+        matched.push_back(&r);
+    }
 
     std::stable_sort(matched.begin(), matched.end(),
         [](const CssRule* a, const CssRule* b) { return a->specificity() < b->specificity(); });
@@ -519,7 +565,8 @@ void applyRules(const RenderNode* node,
 
 void resolveRecursive(RenderNode* node,
                       const std::vector<CssRule>& rules,
-                      const ComputedStyle* parentStyle) {
+                      const ComputedStyle* parentStyle,
+                      int viewportW, int viewportH) {
     if (node->isText) {
         if (parentStyle) node->style = *parentStyle;
         else {
@@ -577,7 +624,7 @@ void resolveRecursive(RenderNode* node,
         node->style.cssVars = parentStyle->cssVars;
     }
 
-    applyRules(node, rules, node->style);
+    applyRules(node, rules, node->style, viewportW, viewportH);
 
     // iter3: fontFamilyList 中是否有 @font-face 注册的字体
     for (const auto& f : node->style.fontFamilyList) {
@@ -588,7 +635,8 @@ void resolveRecursive(RenderNode* node,
         }
     }
 
-    for (auto& c : node->children) resolveRecursive(c.get(), rules, &node->style);
+    for (auto& c : node->children) resolveRecursive(c.get(), rules, &node->style,
+                                                     viewportW, viewportH);
 }
 
 } // namespace
@@ -609,7 +657,8 @@ std::vector<std::string> extractStyleBlocks(const std::string& html) {
     return out;
 }
 
-void resolveStyles(RenderNode* root, const std::vector<CssRule>& rules) {
+void resolveStyles(RenderNode* root, const std::vector<CssRule>& rules,
+                   int viewportW, int viewportH) {
     if (!root) return;
     clearFontFaces();
     root->style = ComputedStyle{};
@@ -619,7 +668,8 @@ void resolveStyles(RenderNode* root, const std::vector<CssRule>& rules) {
     root->style.color = "0,0,0";
     root->style.fontSize = "16px";
     root->style.flexDirection = "row";
-    for (auto& c : root->children) resolveRecursive(c.get(), rules, nullptr);
+    for (auto& c : root->children) resolveRecursive(c.get(), rules, nullptr,
+                                                     viewportW, viewportH);
 }
 
 } // namespace dm::render
