@@ -39,6 +39,8 @@ struct NodeSnapshot {
         // iter3
         int intrinsicW = 0;
         int intrinsicH = 0;
+                // iter4
+        std::string filter;
     } style;
 
     struct Layout {

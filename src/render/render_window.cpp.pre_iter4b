@@ -753,8 +753,6 @@ void RenderWindow::paintNodeWithOpacity(HDC hdc, const RenderNode* node, float o
     DeleteDC(memDC);
 }
 
-
-
 // iter4: filter + opacity 合成
 void RenderWindow::paintNodeWithFilter(HDC hdc, const RenderNode* node,
                                         const std::string& filterStr,

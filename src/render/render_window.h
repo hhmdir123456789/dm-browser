@@ -26,6 +26,8 @@ private:
     void paintNode(HDC hdc, const RenderNode* node);
     void paintNodeInner(HDC hdc, const RenderNode* node);
     void paintNodeWithOpacity(HDC hdc, const RenderNode* node, float opacity);
+    void paintNodeWithFilter(HDC hdc, const RenderNode* node,
+                             const std::string& filterStr, float opacity);
 
     HWND hwnd_{nullptr};
     const RenderNode* root_{nullptr};

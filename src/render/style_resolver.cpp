@@ -210,6 +210,57 @@ void applyUADefaults(RenderNode* node) {
     else if (tag == "tr")    { s.display = "block"; }
     else if (tag == "td")    { s.display = "block"; }
 
+    // iter4: 表单控件默认外观（display: block，绕开 inline 分支不支持尺寸）
+    else if (tag == "input") {
+        s.display = "block";
+        if (!s.hasWidth) {
+            s.width = Length{150, Length::Px};
+            s.hasWidth = true;
+        }
+        if (!s.hasHeight) {
+            s.height = Length{24, Length::Px};
+            s.hasHeight = true;
+        }
+        s.borderWidth = Length{1, Length::Px};
+        s.borderStyle = "solid";
+        s.borderColor = "#cccccc";
+        s.paddingLeft = Length{4, Length::Px};
+        s.paddingRight = Length{4, Length::Px};
+        s.backgroundColor = "255,255,255";
+    }
+    else if (tag == "button") {
+        s.display = "block";
+        if (!s.hasWidth) {
+            s.width = Length{80, Length::Px};
+            s.hasWidth = true;
+        }
+        if (!s.hasHeight) {
+            s.height = Length{28, Length::Px};
+            s.hasHeight = true;
+        }
+        s.borderWidth = Length{1, Length::Px};
+        s.borderStyle = "solid";
+        s.borderColor = "#cccccc";
+        s.backgroundColor = "240,240,240";
+        s.textAlign = "center";
+    }
+    else if (tag == "select") {
+        s.display = "block";
+        if (!s.hasWidth) {
+            s.width = Length{120, Length::Px};
+            s.hasWidth = true;
+        }
+        if (!s.hasHeight) {
+            s.height = Length{24, Length::Px};
+            s.hasHeight = true;
+        }
+        s.borderWidth = Length{1, Length::Px};
+        s.borderStyle = "solid";
+        s.borderColor = "#cccccc";
+        s.backgroundColor = "255,255,255";
+        s.paddingLeft = Length{4, Length::Px};
+    }
+
     // iter3: <img> 的 HTML width/height 属性作为 presentational hint
     if (tag == "img") {
         auto wIt = node->attrs.find("width");
@@ -497,6 +548,9 @@ void applyRules(const RenderNode* node,
             else if (p == "list-style-type") style.listStyleType = v;
             else if (p == "list-style-position") style.listStylePosition = v;
             else if (p == "list-style") parseListStyleShorthand(v, style);
+
+            // iter4: filter
+            else if (p == "filter") style.filterRaw = v;
 
             else if (p == "z-index") {
                 style.zIndex = v;

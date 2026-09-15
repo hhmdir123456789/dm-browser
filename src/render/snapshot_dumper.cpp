@@ -164,6 +164,8 @@ void collectNodes(const RenderNode* node,
     // iter3
     s.style.intrinsicW = (int)node->intrinsicW;
     s.style.intrinsicH = (int)node->intrinsicH;
+        // iter4
+    s.style.filter = node->style.filterRaw;
     s.layout.x = node->layout.x;
     s.layout.y = node->layout.y;
     s.layout.w = node->layout.w;

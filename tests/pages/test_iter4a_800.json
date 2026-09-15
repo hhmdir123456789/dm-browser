@@ -43,7 +43,8 @@
         "listStyleType": "",
         "backgroundImage": "",
         "intrinsicW": 0,
-        "intrinsicH": 0
+        "intrinsicH": 0,
+        "filter": ""
       },
       "layout": {
         "x": 0,
@@ -86,7 +87,8 @@
         "listStyleType": "",
         "backgroundImage": "",
         "intrinsicW": 0,
-        "intrinsicH": 0
+        "intrinsicH": 0,
+        "filter": ""
       },
       "layout": {
         "x": 4,
@@ -129,7 +131,8 @@
         "listStyleType": "",
         "backgroundImage": "",
         "intrinsicW": 0,
-        "intrinsicH": 0
+        "intrinsicH": 0,
+        "filter": ""
       },
       "layout": {
         "x": 4,

@@ -1,3 +1,5 @@
+
+
 #pragma comment(lib, "msimg32.lib")
 
 #include "render/render_window.h"
@@ -53,6 +55,7 @@ static int fontWeightNum(const std::string& fw) {
     try { return std::stoi(fw); } catch (...) { return 400; }
 }
 
+// iter3: 优先使用 @font-face 加载的字体
 static std::wstring pickFontName(const RenderNode* node) {
     if (!node->style.resolvedFontFamily.empty()) {
         return utf8ToWide(node->style.resolvedFontFamily);
@@ -373,24 +376,14 @@ bool RenderWindow::create(const std::wstring& title, int w, int h) {
     return true;
 }
 
-// iter4: paintNode 支持 filter + opacity 合成
 void RenderWindow::paintNode(HDC hdc, const RenderNode* node) {
     if (!node) return;
     if (!node->isText && node->style.display == "none") return;
 
-    bool hasFilter = !node->isText &&
-                     !node->style.filterRaw.empty() &&
-                     node->style.filterRaw != "none" &&
-                     node->layout.w > 0 && node->layout.h > 0;
-    bool hasOpacity = !node->isText &&
-                      node->style.opacity < 1.0f &&
-                      node->style.opacity >= 0.0f &&
-                      node->layout.w > 0 && node->layout.h > 0;
-
-    if (hasFilter || hasOpacity) {
-        paintNodeWithFilter(hdc, node,
-                            hasFilter ? node->style.filterRaw : "",
-                            node->style.opacity);
+    if (!node->isText && node->style.opacity < 1.0f &&
+        node->style.opacity >= 0.0f &&
+        node->layout.w > 0 && node->layout.h > 0) {
+        paintNodeWithOpacity(hdc, node, node->style.opacity);
         return;
     }
 
@@ -605,48 +598,6 @@ void RenderWindow::paintNodeInner(HDC hdc, const RenderNode* node) {
             DeleteObject(pen);
         }
 
-        // iter4: 表单控件外观
-        if (node->tag == "input" || node->tag == "button" || node->tag == "select") {
-            int fs = 14;
-            if (!node->style.fontSize.empty()) {
-                try { fs = (int)std::stod(node->style.fontSize); } catch (...) {}
-            }
-            if (fs <= 0) fs = 14;
-            if (fs > 14) fs = 14;
-
-            HFONT font = CreateFontW(fs, 0, 0, 0, 400, FALSE, FALSE, FALSE,
-                                     DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                                     CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                                     DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei");
-            HGDIOBJ oldFont = SelectObject(hdc, font);
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, RGB(80, 80, 80));
-
-            std::wstring label;
-            auto vit = node->attrs.find("value");
-            if (vit != node->attrs.end() && !vit->second.empty()) {
-                label = utf8ToWide(vit->second);
-            } else if (node->tag == "input") {
-                auto pit = node->attrs.find("placeholder");
-                if (pit != node->attrs.end() && !pit->second.empty()) {
-                    label = utf8ToWide(pit->second);
-                    SetTextColor(hdc, RGB(160, 160, 160));
-                }
-            } else if (!node->text.empty()) {
-                label = utf8ToWide(node->text);
-            }
-
-            if (!label.empty()) {
-                RECT tr{x + 4, y, x + w - 4, y + h};
-                UINT fmt = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS;
-                if (node->tag == "button") fmt = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
-                DrawTextW(hdc, label.c_str(), -1, &tr, fmt);
-            }
-
-            SelectObject(hdc, oldFont);
-            DeleteObject(font);
-        }
-
         if (node->style.display == "list-item") {
             paintListMarker(hdc, node);
         }
@@ -743,87 +694,6 @@ void RenderWindow::paintNodeWithOpacity(HDC hdc, const RenderNode* node, float o
         } else {
             p[i] = (px & 0x00FFFFFF) | ((DWORD)a << 24);
         }
-    }
-
-    BLENDFUNCTION bf{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-    AlphaBlend(hdc, x, y, w, h, memDC, 0, 0, w, h, bf);
-
-    SelectObject(memDC, oldBmp);
-    DeleteObject(memBmp);
-    DeleteDC(memDC);
-}
-
-
-
-// iter4: filter + opacity 合成
-void RenderWindow::paintNodeWithFilter(HDC hdc, const RenderNode* node,
-                                        const std::string& filterStr,
-                                        float opacity) {
-    int x = (int)node->layout.x;
-    int y = (int)node->layout.y;
-    int w = (int)node->layout.w;
-    int h = (int)node->layout.h;
-    if (w <= 0 || h <= 0) { paintNodeInner(hdc, node); return; }
-
-    BITMAPINFO bi{};
-    bi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth       = w;
-    bi.bmiHeader.biHeight      = -h;
-    bi.bmiHeader.biPlanes      = 1;
-    bi.bmiHeader.biBitCount    = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-
-    void* bits = nullptr;
-    HDC memDC = CreateCompatibleDC(hdc);
-    HBITMAP memBmp = CreateDIBSection(memDC, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!memBmp || !bits) {
-        if (memBmp) DeleteObject(memBmp);
-        DeleteDC(memDC);
-        paintNodeInner(hdc, node);
-        return;
-    }
-
-    HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
-    SetViewportOrgEx(memDC, -x, -y, nullptr);
-
-    DWORD* p = (DWORD*)bits;
-    for (int i = 0; i < w * h; ++i) p[i] = 0x00FF00FF;
-
-    paintNodeInner(memDC, node);
-
-    SetViewportOrgEx(memDC, 0, 0, nullptr);
-
-    std::vector<unsigned char> buf((size_t)w * h * 4);
-    for (int i = 0; i < w * h; ++i) {
-        DWORD px = p[i];
-        if ((px & 0x00FFFFFF) == 0x00FF00FF) {
-            buf[i * 4 + 0] = 0;
-            buf[i * 4 + 1] = 0;
-            buf[i * 4 + 2] = 0;
-            buf[i * 4 + 3] = 0;
-        } else {
-            buf[i * 4 + 0] = (unsigned char)((px >> 0)  & 0xFF);
-            buf[i * 4 + 1] = (unsigned char)((px >> 8)  & 0xFF);
-            buf[i * 4 + 2] = (unsigned char)((px >> 16) & 0xFF);
-            buf[i * 4 + 3] = (unsigned char)((px >> 24) & 0xFF);
-        }
-    }
-
-    if (!filterStr.empty()) {
-        auto filters = parseFilterList(filterStr);
-        applyFilters(buf, w, h, filters);
-    }
-
-    BYTE alphaVal = (BYTE)(opacity * 255.0f + 0.5f);
-    for (int i = 0; i < w * h; ++i) {
-        unsigned char B = buf[i * 4 + 0];
-        unsigned char G = buf[i * 4 + 1];
-        unsigned char R = buf[i * 4 + 2];
-        unsigned char A = buf[i * 4 + 3];
-        if (opacity < 1.0f) {
-            A = (unsigned char)((A * alphaVal) / 255);
-        }
-        p[i] = ((DWORD)A << 24) | ((DWORD)R << 16) | ((DWORD)G << 8) | (DWORD)B;
     }
 
     BLENDFUNCTION bf{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };

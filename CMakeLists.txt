@@ -156,6 +156,7 @@ if(WIN32)
         src/render/render_window.cpp
         src/render/image_loader.cpp
         src/render/font_loader.cpp
+        src/render/filter.cpp
         src/learn/snapshot_parser.cpp
         src/learn/multi_compare.cpp
         src/learn/learn_store.cpp

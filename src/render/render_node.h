@@ -52,6 +52,8 @@ struct ComputedStyle {
 
     // iter3: @font-face 用到的私有字体
     std::string resolvedFontFamily;
+    // iter4: filter 原始串 + 解析结果
+    std::string filterRaw;
 
     // grid
     std::string gridTemplateColumns;
